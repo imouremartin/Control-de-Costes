@@ -46,7 +46,7 @@
       const manifest = {
         name: 'Mis Sobres · Control de Cuentas',
         short_name: 'Mis Sobres',
-        description: 'Control de cuentas personales y del hogar por capítulos',
+        description: 'Gestión de presupuestos por capítulos y años',
         start_url: '.',
         display: 'standalone',
         background_color: '#F8F6F1',
@@ -116,24 +116,18 @@
       font-variant-numeric: tabular-nums;
     }
 
-    .no-scrollbar::-webkit-scrollbar {
-      display: none;
-    }
-    .no-scrollbar {
-      -ms-overflow-style: none;
-      scrollbar-width: none;
-    }
-
-    /* Tabla Anual con columnas fijas y celdas opacas */
+    /* Tabla Anual: columnas fijas 100% opacas y con z-index alto */
     .annual-scroll {
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
       position: relative;
+      isolation: isolate;
     }
     .sticky-col-1 {
       position: sticky;
       left: 0;
-      z-index: 20;
+      z-index: 30;
+      width: 112px;
       min-width: 112px;
       max-width: 112px;
       background-color: #FFFFFF;
@@ -141,15 +135,18 @@
     .sticky-col-2 {
       position: sticky;
       left: 112px;
-      z-index: 20;
-      min-width: 96px;
+      z-index: 30;
+      width: 94px;
+      min-width: 94px;
+      max-width: 94px;
       background-color: #FFFFFF;
-      box-shadow: 4px 0 8px -3px rgba(28, 25, 23, 0.14);
+      box-shadow: 4px 0 8px -2px rgba(28, 25, 23, 0.16);
     }
     .sticky-head-1 {
       position: sticky;
       left: 0;
-      z-index: 30;
+      z-index: 40;
+      width: 112px;
       min-width: 112px;
       max-width: 112px;
       background-color: #EFECE4;
@@ -157,15 +154,18 @@
     .sticky-head-2 {
       position: sticky;
       left: 112px;
-      z-index: 30;
-      min-width: 96px;
+      z-index: 40;
+      width: 94px;
+      min-width: 94px;
+      max-width: 94px;
       background-color: #EFECE4;
-      box-shadow: 4px 0 8px -3px rgba(28, 25, 23, 0.14);
+      box-shadow: 4px 0 8px -2px rgba(28, 25, 23, 0.16);
     }
     .sticky-foot-1 {
       position: sticky;
       left: 0;
-      z-index: 25;
+      z-index: 35;
+      width: 112px;
       min-width: 112px;
       max-width: 112px;
       background-color: #EFECE4;
@@ -173,10 +173,12 @@
     .sticky-foot-2 {
       position: sticky;
       left: 112px;
-      z-index: 25;
-      min-width: 96px;
+      z-index: 35;
+      width: 94px;
+      min-width: 94px;
+      max-width: 94px;
       background-color: #EFECE4;
-      box-shadow: 4px 0 8px -3px rgba(28, 25, 23, 0.14);
+      box-shadow: 4px 0 8px -2px rgba(28, 25, 23, 0.16);
     }
 
     @keyframes slideUp {
@@ -206,37 +208,40 @@
 
   <div id="app" class="max-w-4xl mx-auto min-h-screen flex flex-col">
 
-    <!-- CABECERA COMPACTA: Selector de Bloque (Personal/Hogar), Selector de Año y Ajustes -->
-    <header class="sticky top-0 z-30 bg-cream-100/95 backdrop-blur-md border-b border-cream-300 px-3.5 py-2.5">
+    <!-- CABECERA SUPERIOR LIMPIA: Bloque + Año + Ajustes -->
+    <header class="sticky top-0 z-30 bg-cream-100/95 backdrop-blur-md border-b border-cream-300 px-4 py-2.5">
       <div class="flex items-center justify-between gap-2">
-        <!-- Grupo izquierdo: Selector de Bloque + Selector rápido de Año -->
-        <div class="flex items-center gap-1.5 min-w-0">
+        <!-- Selector jerárquico Bloque + Año -->
+        <div class="flex items-center gap-1.5 bg-white border border-cream-300 rounded-2xl p-1 shadow-sm min-w-0">
           <button onclick="openWorkspaceModal()"
-            class="flex items-center gap-2 bg-white hover:bg-cream-50 active:scale-[0.98] transition-all border border-cream-300 rounded-2xl px-3 py-2 shadow-sm min-w-0 text-left">
+            class="flex items-center gap-2 hover:bg-cream-100 active:scale-[0.98] transition-all rounded-xl px-2.5 py-1.5 text-left min-w-0">
             <div id="headerCategoryIcon" class="w-8 h-8 rounded-lg bg-emeraldPro-700 text-white flex items-center justify-center shrink-0">
               <i class="ph-bold ph-user text-base"></i>
             </div>
             <div class="min-w-0">
-              <span class="text-[10px] font-bold uppercase tracking-wider text-stoneInk-400 block leading-none">Bloque</span>
-              <div class="flex items-center gap-1 mt-0.5">
+              <div class="flex items-center gap-1">
                 <span id="headerCategoryLabel" class="font-extrabold text-sm text-stoneInk-900 truncate">Personal</span>
                 <i class="ph-bold ph-caret-down text-[11px] text-stoneInk-500 shrink-0"></i>
               </div>
+              <span class="text-[10px] font-semibold text-stoneInk-400 block leading-none">Cambiar bloque</span>
             </div>
           </button>
 
-          <!-- Selector rápido de Año del bloque activo -->
-          <div class="bg-white border border-cream-300 rounded-2xl px-2.5 py-2 shadow-sm shrink-0">
-            <span class="text-[10px] font-bold uppercase tracking-wider text-stoneInk-400 block leading-none">Año</span>
+          <div class="h-7 w-[1px] bg-cream-300 shrink-0"></div>
+
+          <!-- Desplegable de Año -->
+          <div class="relative flex items-center pr-1 shrink-0">
             <select id="headerYearSelect" onchange="selectYearInCategory(this.value)"
-              class="mt-0.5 bg-transparent font-mono font-extrabold text-sm text-stoneInk-900 focus:outline-none cursor-pointer pr-1">
+              aria-label="Seleccionar año"
+              class="appearance-none bg-emeraldPro-50 hover:bg-emeraldPro-100 border border-emeraldPro-700/25 rounded-xl pl-3 pr-7 py-1.5 font-mono text-sm font-extrabold text-emeraldPro-700 focus:outline-none cursor-pointer">
             </select>
+            <i class="ph-bold ph-caret-down text-xs text-emeraldPro-700 pointer-events-none absolute right-3"></i>
           </div>
         </div>
 
-        <!-- Grupo derecho: Botón Ajustes -->
+        <!-- Botón Ajustes y Copia de Seguridad -->
         <button onclick="openSettingsModal()" aria-label="Ajustes y respaldo"
-          class="w-10 h-10 rounded-xl bg-white hover:bg-cream-200/60 border border-cream-300 flex items-center justify-center text-stoneInk-700 transition-all active:scale-95 shrink-0">
+          class="w-10 h-10 rounded-xl bg-white hover:bg-cream-200/60 border border-cream-300 flex items-center justify-center text-stoneInk-700 shadow-sm transition-all active:scale-95 shrink-0">
           <i class="ph-bold ph-gear-six text-lg"></i>
         </button>
       </div>
@@ -250,51 +255,51 @@
       <!-- Vista 2: Tabla Anual -->
       <section id="view-table" class="hidden"></section>
 
-      <!-- Vista 3: Cronológico (Buscador + Desplegables compactos + KPI en una línea) -->
+      <!-- Vista 3: Cronológico -->
       <section id="view-chrono" class="hidden space-y-3">
-        <div class="bg-white border border-cream-300 rounded-2xl p-3.5 shadow-sm space-y-2.5">
-          <!-- Buscador + Botón Limpiar -->
-          <div class="flex items-center gap-2">
-            <div class="relative flex-1">
-              <i class="ph-bold ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-stoneInk-400 text-base"></i>
-              <input id="chronoSearchInput" type="search" autocomplete="off"
-                placeholder="Buscar concepto, nota o importe..."
-                class="w-full bg-cream-100 border border-cream-300 focus:border-emeraldPro-700 focus:bg-white rounded-xl pl-9 pr-3 py-2 text-sm text-stoneInk-900 placeholder:text-stoneInk-400 focus:outline-none transition-colors" />
-            </div>
-
-            <button onclick="clearChronoFilters()"
-              class="bg-terra-50 hover:bg-terra-100 text-terra-600 border border-terra-600/20 rounded-xl py-2 px-3 text-xs font-extrabold flex items-center gap-1 transition-all active:scale-95 shrink-0">
-              <i class="ph-bold ph-broom text-sm"></i>
-              <span>Limpiar</span>
-            </button>
+        <div class="bg-white border border-cream-300 rounded-2xl p-3.5 shadow-sm space-y-3">
+          <div class="relative">
+            <i class="ph-bold ph-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-stoneInk-400 text-base"></i>
+            <input id="chronoSearchInput" type="search" autocomplete="off"
+              placeholder="Buscar concepto, nota o importe..."
+              class="w-full bg-cream-100 border border-cream-300 focus:border-emeraldPro-700 focus:bg-white rounded-xl pl-10 pr-4 py-2.5 text-sm text-stoneInk-900 placeholder:text-stoneInk-400 focus:outline-none transition-colors" />
           </div>
 
-          <!-- 3 Desplegables en fila: Capítulo, Mes y Tipo (incluye Traspasos) -->
-          <div class="grid grid-cols-3 gap-2">
+          <div class="grid grid-cols-12 gap-2 items-center">
             <select id="chronoChapterSelect"
-              class="bg-cream-100 border border-cream-300 rounded-xl px-2 py-2 text-xs font-bold text-stoneInk-800 focus:outline-none truncate">
+              class="col-span-4 bg-cream-100 border border-cream-300 rounded-xl px-2 py-2 text-xs font-bold text-stoneInk-800 focus:outline-none">
               <option value="all">Todos cap.</option>
             </select>
 
             <select id="chronoMonthSelect"
-              class="bg-cream-100 border border-cream-300 rounded-xl px-2 py-2 text-xs font-bold text-stoneInk-800 focus:outline-none">
-              <option value="all">Todos meses</option>
+              class="col-span-3 bg-cream-100 border border-cream-300 rounded-xl px-2 py-2 text-xs font-bold text-stoneInk-800 focus:outline-none">
+              <option value="all">Meses</option>
             </select>
 
             <select id="chronoTypeSelect"
-              class="bg-cream-100 border border-cream-300 rounded-xl px-2 py-2 text-xs font-bold text-stoneInk-800 focus:outline-none">
-              <option value="all">Todo tipo</option>
+              class="col-span-3 bg-cream-100 border border-cream-300 rounded-xl px-2 py-2 text-xs font-bold text-stoneInk-800 focus:outline-none">
+              <option value="all">Tipos</option>
               <option value="expense">Gastos</option>
               <option value="income">Ingresos</option>
               <option value="transfer">Traspasos</option>
             </select>
+
+            <button onclick="clearChronoFilters()" title="Limpiar filtros"
+              class="col-span-2 bg-terra-50 hover:bg-terra-100 text-terra-600 border border-terra-600/20 rounded-xl py-2 px-1 text-xs font-extrabold flex items-center justify-center transition-all active:scale-95">
+              <i class="ph-bold ph-broom text-base"></i>
+            </button>
           </div>
         </div>
 
-        <!-- KPI Sumatorio en una única línea visual -->
         <div id="chrono-kpi"></div>
 
-        <!-- Listado de movimientos -->
+        <!-- Botón Nuevo Apunte integrado en Cronológico -->
+        <button onclick="openTxModal()"
+          class="w-full py-3 rounded-2xl bg-terra-600 hover:bg-terra-500 active:scale-[0.99] text-white font-extrabold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all">
+          <i class="ph-bold ph-plus text-base"></i>
+          <span>Nuevo Apunte</span>
+        </button>
+
         <div id="chrono-results" class="space-y-2"></div>
       </section>
 
@@ -304,7 +309,7 @@
 
     <!-- NAVEGACIÓN INFERIOR (4 PESTAÑAS) -->
     <nav class="fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur-md border-t border-cream-300 nav-safe">
-      <div class="max-w-4xl mx-auto grid grid-cols-4 px-1 pt-1.5">
+      <div class="max-w-4xl mx-auto grid grid-cols-4 px-1.5 pt-1.5">
         <button onclick="switchView('chapters')" id="tab-chapters"
           class="flex flex-col items-center justify-center py-1.5 rounded-xl transition-colors text-emeraldPro-700">
           <i class="ph-fill ph-folders text-2xl"></i>
@@ -325,7 +330,7 @@
 
         <button onclick="switchView('charts')" id="tab-charts"
           class="flex flex-col items-center justify-center py-1.5 rounded-xl transition-colors text-stoneInk-500">
-          <i class="ph-bold ph-chart-pie-slice text-2xl"></i>
+          <i class="ph-bold ph-chart-donut text-2xl"></i>
           <span class="text-[11px] font-semibold mt-0.5">Gráficos</span>
         </button>
       </div>
@@ -338,36 +343,54 @@
     <div id="modalSlot" class="relative z-10 flex items-end sm:items-center justify-center min-h-full p-0 sm:p-4 pointer-events-none"></div>
   </div>
 
-  <!-- TOAST NOTIFICATIONS -->
+  <!-- TOAST -->
   <div id="toastBox" class="fixed top-20 inset-x-4 z-50 flex flex-col items-center pointer-events-none gap-2"></div>
 
   <script>
     // =========================================================================
-    // 1. DATASET COMPLETO 2019-2026 (PERSONAL DEL JSON) + 2022-2026 (HOGAR EXCEL)
+    // 1. CONFIGURACIÓN INICIAL (SIN DATOS PRIVADOS EN EL CÓDIGO PÚBLICO)
     // =========================================================================
     const STORAGE_KEY = 'mis_sobres_db_v8';
     const MONTHS_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
     const MONTHS_FULL = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
-   // Dataset Personal
+    const DEFAULT_WORKSPACES = [
+      { id: 'personal', name: 'Personal', icon: 'ph-user', color: 'emerald' },
+      { id: 'hogar', name: 'Hogar', icon: 'ph-house-line', color: 'terra' }
+    ];
+
+    const WORKSPACE_PRESETS = [
+      { icon: 'ph-user', color: 'emerald', label: 'Personal' },
+      { icon: 'ph-house-line', color: 'terra', label: 'Hogar' },
+      { icon: 'ph-car', color: 'sky', label: 'Vehículo' },
+      { icon: 'ph-airplane-tilt', color: 'indigo', label: 'Viajes' },
+      { icon: 'ph-briefcase', color: 'amber', label: 'Trabajo' },
+      { icon: 'ph-piggy-bank', color: 'violet', label: 'Ahorro' }
+    ];
+
+    // Datasets vacíos por defecto (los datos reales se cargan localmente vía JSON)
     const PERSONAL_2019_2026 = {
       "2026": { "chapters": [], "transactions": [] }
     };
 
-    // Dataset HOGAR
     const HOGAR_2022_2026 = {
       "2026": { "chapters": [], "transactions": [] }
     };
 
     // =========================================================================
-    // 2. DESCOMPRESIÓN Y GESTIÓN DE ESTADO (PERSONAL VS HOGAR + AÑOS)
+    // 2. GESTIÓN DE ESTADO (BLOQUES DINÁMICOS + AÑOS + ORDENACIÓN)
     // =========================================================================
+    const NOW = new Date();
+    const CURRENT_REAL_YEAR = NOW.getFullYear();
+    const CURRENT_REAL_MONTH = NOW.getMonth(); // 0..11
+
     let state = loadState();
     let currentView = 'chapters'; // 'chapters' | 'table' | 'chrono' | 'charts'
-    let selectedMonth = 10; // Noviembre (0..11)
+    let selectedMonth = CURRENT_REAL_MONTH; // Arranca en el mes real actual
+    let chapterSortMode = 'az'; // 'az' | 'za' | 'bal_asc' | 'bal_desc'
     let chartDonutMode = 'year_expense'; // 'year_expense' | 'month_expense'
-    let chartDonutMonth = 10; // Mes seleccionado en el gráfico de tarta
-    let chartInspectMonth = null; // Mes seleccionado al pinchar en Evolución Mensual
+    let chartDonutMonth = CURRENT_REAL_MONTH;
+    let chartInspectMonth = null;
     let chronoFilter = {
       search: '',
       chapterId: 'all',
@@ -376,63 +399,60 @@
     };
 
     const CHART_PALETTE = [
-      '#0F766E', // Verde azulado profundo
-      '#EA580C', // Naranja vivo
-      '#2563EB', // Azul cobalto
-      '#DB2777', // Magenta / Fucsia
-      '#CA8A04', // Amarillo ocre intenso
-      '#7C3AED', // Violeta eléctrico
-      '#16A34A', // Verde esmeralda
-      '#DC2626', // Rojo carmesí
-      '#0891B2', // Cian oscuro
-      '#9333EA', // Púrpura
-      '#4F46E5', // Índigo
-      '#65A30D', // Verde lima
-      '#E11D48', // Rosa intenso
-      '#0284C7', // Azul cielo
-      '#D97706'  // Ámbar
+      '#0F766E', '#EA580C', '#2563EB', '#DB2777', '#CA8A04',
+      '#7C3AED', '#16A34A', '#DC2626', '#0891B2', '#9333EA',
+      '#4F46E5', '#65A30D', '#E11D48', '#0284C7', '#D97706'
     ];
 
     function buildInitialState() {
-      const personalYears = Object.keys(PERSONAL_2019_2026).sort((a, b) => Number(b) - Number(a));
-      const personalBooks = personalYears.map(yr => {
-        const entry = PERSONAL_2019_2026[yr];
-        return {
-          id: `personal_${yr}`,
-          category: 'personal',
-          year: Number(yr),
-          chapters: entry.chapters.map(c => ({
-            ...c,
-            closed: false,
-            closedDate: null,
-            closedMonth: null
-          })),
-          transactions: entry.transactions.map(t => ({ ...t }))
-        };
-      });
+      const pYears = Object.keys(PERSONAL_2019_2026).sort((a, b) => Number(b) - Number(a));
+      const personalBooks = pYears.map(yr => ({
+        id: `personal_${yr}`,
+        category: 'personal',
+        year: Number(yr),
+        chapters: (PERSONAL_2019_2026[yr].chapters || []).map(c => ({ ...c })),
+        transactions: (PERSONAL_2019_2026[yr].transactions || []).map(t => ({ ...t }))
+      }));
 
-      const hogarYears = Object.keys(HOGAR_2022_2026).sort((a, b) => Number(b) - Number(a));
-      const hogarBooks = hogarYears.map(yr => {
-        const entry = HOGAR_2022_2026[yr];
-        return {
-          id: `hogar_${yr}`,
-          category: 'hogar',
-          year: Number(yr),
-          chapters: entry.chapters.map(c => ({
-            ...c,
-            closed: false,
-            closedDate: null,
-            closedMonth: null
-          })),
-          transactions: entry.transactions.map(t => ({ ...t }))
-        };
-      });
+      const hYears = Object.keys(HOGAR_2022_2026).sort((a, b) => Number(b) - Number(a));
+      const hogarBooks = hYears.map(yr => ({
+        id: `hogar_${yr}`,
+        category: 'hogar',
+        year: Number(yr),
+        chapters: (HOGAR_2022_2026[yr].chapters || []).map(c => ({ ...c })),
+        transactions: (HOGAR_2022_2026[yr].transactions || []).map(t => ({ ...t }))
+      }));
 
       return {
+        workspaces: DEFAULT_WORKSPACES.map(w => ({ ...w })),
         activeCategory: 'personal',
         activeBookId: personalBooks[0]?.id || 'personal_2026',
         books: [...personalBooks, ...hogarBooks]
       };
+    }
+
+    function ensureWorkspacesIntegrity(st) {
+      if (!Array.isArray(st.workspaces) || st.workspaces.length === 0) {
+        st.workspaces = DEFAULT_WORKSPACES.map(w => ({ ...w }));
+      }
+      // Garantiza que si en el JSON restaurado hay libros de un bloque no registrado, se registre automáticamente
+      const existingIds = new Set(st.workspaces.map(w => w.id));
+      (st.books || []).forEach(b => {
+        if (b.category && !existingIds.has(b.category)) {
+          existingIds.add(b.category);
+          const preset = DEFAULT_WORKSPACES.find(d => d.id === b.category);
+          st.workspaces.push(preset
+            ? { ...preset }
+            : {
+                id: b.category,
+                name: b.category.charAt(0).toUpperCase() + b.category.slice(1),
+                icon: 'ph-folder',
+                color: 'sky'
+              }
+          );
+        }
+      });
+      return st;
     }
 
     function loadState() {
@@ -441,7 +461,7 @@
         if (raw) {
           const parsed = JSON.parse(raw);
           if (parsed && Array.isArray(parsed.books) && parsed.books.length > 0) {
-            return parsed;
+            return ensureWorkspacesIntegrity(parsed);
           }
         }
       } catch (e) {
@@ -460,6 +480,44 @@
       }
     }
 
+    function getWorkspaces() {
+      ensureWorkspacesIntegrity(state);
+      return state.workspaces;
+    }
+
+    function getWorkspaceInfo(catId) {
+      return getWorkspaces().find(w => w.id === catId) || {
+        id: catId,
+        name: catId === 'personal' ? 'Personal' : (catId === 'hogar' ? 'Hogar' : catId),
+        icon: catId === 'hogar' ? 'ph-house-line' : 'ph-user',
+        color: catId === 'hogar' ? 'terra' : 'emerald'
+      };
+    }
+
+    function getWorkspaceBgClass(color) {
+      const map = {
+        emerald: 'bg-emeraldPro-700',
+        terra: 'bg-terra-600',
+        sky: 'bg-sky-700',
+        indigo: 'bg-indigo-700',
+        amber: 'bg-amber-600',
+        violet: 'bg-violet-700'
+      };
+      return map[color] || 'bg-emeraldPro-700';
+    }
+
+    function getWorkspaceBorderClass(color) {
+      const map = {
+        emerald: 'border-emeraldPro-700',
+        terra: 'border-terra-600',
+        sky: 'border-sky-700',
+        indigo: 'border-indigo-700',
+        amber: 'border-amber-600',
+        violet: 'border-violet-700'
+      };
+      return map[color] || 'border-emeraldPro-700';
+    }
+
     function getBooksByCategory(cat) {
       return state.books
         .filter(b => b.category === cat)
@@ -471,16 +529,24 @@
       if (!b) {
         const list = getBooksByCategory(state.activeCategory);
         b = list[0] || state.books[0];
+        if (!b) {
+          // Respaldo de seguridad si no quedara ningún libro
+          const ws = getWorkspaces()[0] || DEFAULT_WORKSPACES[0];
+          b = {
+            id: `${ws.id}_${CURRENT_REAL_YEAR}`,
+            category: ws.id,
+            year: CURRENT_REAL_YEAR,
+            chapters: [],
+            transactions: []
+          };
+          state.books.push(b);
+        }
         state.activeBookId = b.id;
         state.activeCategory = b.category;
       }
       return b;
     }
 
-    /**
-     * Devuelve los capítulos ordenados alfabéticamente (activos primero alfabéticamente,
-     * y cerrados/eliminados alfabéticamente después).
-     */
     function getSortedChapters(chapters) {
       return [...chapters].sort((a, b) => {
         const aClosed = Boolean(a.closed);
@@ -490,8 +556,21 @@
       });
     }
 
+    function formatYearsSummary(books) {
+      if (!books || books.length === 0) return '0 años';
+      const sortedAsc = [...books].sort((a, b) => a.year - b.year);
+      if (sortedAsc.length === 1) {
+        return `1 año (${sortedAsc[0].year})`;
+      }
+      return `${sortedAsc.length} años (${sortedAsc[0].year}–${sortedAsc[sortedAsc.length - 1].year})`;
+    }
+
+    function isCurrentRealMonth(bookYear, monthIdx) {
+      return Number(bookYear) === CURRENT_REAL_YEAR && Number(monthIdx) === CURRENT_REAL_MONTH;
+    }
+
     // =========================================================================
-    // 3. FORMATEO Y CÁLCULOS FINANCIEROS (ACUMULADO A MES VENCIDO)
+    // 3. FORMATEO Y CÁLCULOS FINANCIEROS
     // =========================================================================
     function fmtEur(num) {
       const val = Number(num) || 0;
@@ -528,12 +607,6 @@
       return `${p[2]} ${MONTHS_SHORT[parseInt(p[1], 10) - 1]}`;
     }
 
-    /**
-     * Calcula los saldos de cada capítulo ordenados alfabéticamente:
-     * - monthStartBalance: saldo al inicio del mes `targetMonth`
-     * - balanceAtMonthEnd: saldo acumulado al cierre del mes `targetMonth` (mes vencido)
-     * - annualEndBalance: saldo acumulado al cierre del año completo (Diciembre)
-     */
     function analyzeBook(book, targetMonth = selectedMonth) {
       const sortedRawChapters = getSortedChapters(book.chapters);
 
@@ -647,14 +720,12 @@
 
     function renderHeader() {
       const book = getActiveBook();
-      const isPersonal = book.category === 'personal';
+      const ws = getWorkspaceInfo(book.category);
 
-      document.getElementById('headerCategoryLabel').textContent = isPersonal ? 'Personal' : 'Hogar';
+      document.getElementById('headerCategoryLabel').textContent = ws.name;
       const iconBox = document.getElementById('headerCategoryIcon');
-      iconBox.className = `w-8 h-8 rounded-lg text-white flex items-center justify-center shrink-0 ${
-        isPersonal ? 'bg-emeraldPro-700' : 'bg-terra-600'
-      }`;
-      iconBox.innerHTML = `<i class="ph-bold ${isPersonal ? 'ph-user' : 'ph-house-line'} text-base"></i>`;
+      iconBox.className = `w-8 h-8 rounded-lg text-white flex items-center justify-center shrink-0 ${getWorkspaceBgClass(ws.color)}`;
+      iconBox.innerHTML = `<i class="ph-bold ${ws.icon} text-base"></i>`;
 
       const catBooks = getBooksByCategory(book.category);
       const yearSelect = document.getElementById('headerYearSelect');
@@ -687,7 +758,7 @@
     }
 
     // =========================================================================
-    // 5. VISTA 1: CAPÍTULOS (ACUMULADO A MES VENCIDO + REPARTIR SUELDO + CERRADOS)
+    // 5. VISTA 1: CAPÍTULOS (KPI 1 LÍNEA + ORDENACIÓN + SALDO DISPONIBLE ACTUAL)
     // =========================================================================
     function changeSelectedMonth(delta) {
       selectedMonth = (selectedMonth + delta + 12) % 12;
@@ -699,27 +770,59 @@
       renderChaptersView();
     }
 
+    function setChapterSortMode(mode) {
+      chapterSortMode = mode;
+      renderChaptersView();
+    }
+
+    function applyChapterSort(list) {
+      return [...list].sort((a, b) => {
+        if (a.closed !== b.closed) return a.closed ? 1 : -1;
+        if (chapterSortMode === 'za') {
+          return (b.name || '').localeCompare(a.name || '', 'es', { sensitivity: 'base' });
+        }
+        if (chapterSortMode === 'bal_asc') {
+          return a.balanceAtMonthEnd - b.balanceAtMonthEnd;
+        }
+        if (chapterSortMode === 'bal_desc') {
+          return b.balanceAtMonthEnd - a.balanceAtMonthEnd;
+        }
+        return (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' });
+      });
+    }
+
     function renderChaptersView() {
       const book = getActiveBook();
+      const ws = getWorkspaceInfo(book.category);
       const { chapters, summary } = analyzeBook(book, selectedMonth);
       const monthName = MONTHS_FULL[selectedMonth];
       const monthShort = MONTHS_SHORT[selectedMonth];
+      const isCurrentMonth = isCurrentRealMonth(book.year, selectedMonth);
 
-      // Mostrar capítulos activos y también los eliminados/cerrados hasta el mes de su cierre
-      const visibleChapters = chapters.filter(ch => {
-        if (!ch.closed) return true;
-        if (typeof ch.closedMonth === 'number') {
-          return selectedMonth <= ch.closedMonth;
-        }
-        return true;
-      });
+      const mainKpiLabel = isCurrentMonth
+        ? 'Saldo disponible'
+        : `Acumulado cierre ${monthName}`;
+
+      const cardKpiLabel = isCurrentMonth
+        ? 'Saldo disponible'
+        : `Acum. cierre ${monthShort}`;
+
+      const visibleChapters = applyChapterSort(
+        chapters.filter(ch => {
+          if (!ch.closed) return true;
+          if (typeof ch.closedMonth === 'number') {
+            return selectedMonth <= ch.closedMonth;
+          }
+          return true;
+        })
+      );
 
       const emptyStateHtml = `
         <div class="bg-white border border-cream-300 rounded-3xl p-8 text-center shadow-sm">
           <div class="w-14 h-14 rounded-2xl bg-cream-200 text-stoneInk-600 flex items-center justify-center mx-auto mb-3">
             <i class="ph-duotone ph-folders text-3xl"></i>
           </div>
-          <h3 class="font-extrabold text-base text-stoneInk-900">Este libro (${book.category === 'personal' ? 'Personal' : 'Hogar'} ${book.year}) está vacío</h3>
+          <h3 class="font-extrabold text-base text-stoneInk-900">Este libro (${esc(ws.name)} ${book.year}) está vacío</h3>
           <p class="text-xs text-stoneInk-500 mt-1 max-w-xs mx-auto">
             Crea tus primeros capítulos o copia la estructura desde otro año de este mismo bloque.
           </p>
@@ -765,7 +868,7 @@
                     </div>
 
                     <div class="text-right shrink-0">
-                      <span class="text-[10px] font-bold uppercase tracking-wider text-stoneInk-400 block">Acum. cierre ${monthShort}</span>
+                      <span class="text-[10px] font-bold uppercase tracking-wider text-stoneInk-400 block whitespace-nowrap">${cardKpiLabel}</span>
                       <span class="font-mono text-xl font-extrabold tabular-nums whitespace-nowrap ${
                         isClosed ? 'text-stoneInk-600' : (isNeg ? 'text-terra-600' : 'text-emeraldPro-700')
                       }">
@@ -800,18 +903,18 @@
           </div>`;
 
       document.getElementById('view-chapters').innerHTML = `
-        <!-- KPI Superior: Navegador de Mes + Acumulado a Mes Vencido + Botón Repartir Sueldo -->
+        <!-- KPI Superior: Siempre 1 línea en cabecera y cifras, y 2 líneas en distribución -->
         <div class="bg-stoneInk-900 text-cream-50 rounded-3xl p-4 shadow-md mb-4">
           <div class="flex items-center justify-between gap-2 pb-3 border-b border-stoneInk-700">
             <button onclick="changeSelectedMonth(-1)" aria-label="Mes anterior"
-              class="w-9 h-9 rounded-xl bg-stoneInk-700/70 hover:bg-stoneInk-700 flex items-center justify-center text-white active:scale-95">
+              class="w-9 h-9 rounded-xl bg-stoneInk-700/70 hover:bg-stoneInk-700 flex items-center justify-center text-white active:scale-95 shrink-0">
               <i class="ph-bold ph-caret-left"></i>
             </button>
 
-            <div class="flex items-center gap-2">
-              <i class="ph-bold ph-calendar-blank text-emerald-400"></i>
+            <div class="flex items-center justify-center gap-1.5 min-w-0 whitespace-nowrap">
+              <i class="ph-bold ph-calendar-blank text-emerald-400 shrink-0"></i>
               <select onchange="setSelectedMonth(this.value)"
-                class="bg-transparent font-extrabold text-base text-white focus:outline-none cursor-pointer text-center">
+                class="bg-transparent font-extrabold text-base text-white focus:outline-none cursor-pointer text-center whitespace-nowrap">
                 ${MONTHS_FULL.map((m, i) => `
                   <option value="${i}" ${i === selectedMonth ? 'selected' : ''} class="text-stoneInk-900">${m}</option>
                 `).join('')}
@@ -819,52 +922,65 @@
             </div>
 
             <button onclick="changeSelectedMonth(1)" aria-label="Mes siguiente"
-              class="w-9 h-9 rounded-xl bg-stoneInk-700/70 hover:bg-stoneInk-700 flex items-center justify-center text-white active:scale-95">
+              class="w-9 h-9 rounded-xl bg-stoneInk-700/70 hover:bg-stoneInk-700 flex items-center justify-center text-white active:scale-95 shrink-0">
               <i class="ph-bold ph-caret-right"></i>
             </button>
           </div>
 
-          <div class="pt-3 flex items-end justify-between gap-3">
-            <div>
-              <span class="text-[11px] uppercase tracking-wider text-stoneInk-400 font-semibold block">
-                Acumulado cierre ${monthName}
+          <div class="pt-3 flex items-end justify-between gap-2">
+            <div class="min-w-0">
+              <span class="text-[10px] sm:text-[11px] uppercase tracking-wider text-stoneInk-400 font-semibold block whitespace-nowrap truncate">
+                ${mainKpiLabel}
               </span>
-              <span class="font-mono text-2xl sm:text-3xl font-extrabold tabular-nums whitespace-nowrap mt-0.5 block ${
+              <span class="font-mono text-xl sm:text-3xl font-extrabold tabular-nums whitespace-nowrap mt-0.5 block ${
                 summary.totalAtMonthEnd < -0.005 ? 'text-rose-400' : 'text-white'
               }">
                 ${fmtEur(summary.totalAtMonthEnd)}
               </span>
             </div>
 
-            <div class="flex gap-3 text-right font-mono tabular-nums">
+            <div class="flex gap-2.5 sm:gap-3 text-right font-mono tabular-nums shrink-0">
               <div>
-                <span class="text-[10px] font-sans uppercase text-stoneInk-400 block">Ing. ${monthShort}</span>
-                <span class="text-xs sm:text-sm font-bold text-emerald-400 whitespace-nowrap">+${fmtEur(summary.monthIncomeTotal)}</span>
+                <span class="text-[10px] font-sans uppercase text-stoneInk-400 block whitespace-nowrap">Ing. ${monthShort}</span>
+                <span class="text-[11px] sm:text-sm font-bold text-emerald-400 whitespace-nowrap">+${fmtEur(summary.monthIncomeTotal)}</span>
               </div>
               <div>
-                <span class="text-[10px] font-sans uppercase text-stoneInk-400 block">Gtos ${monthShort}</span>
-                <span class="text-xs sm:text-sm font-bold text-orange-300 whitespace-nowrap">-${fmtEur(summary.monthExpenseTotal)}</span>
+                <span class="text-[10px] font-sans uppercase text-stoneInk-400 block whitespace-nowrap">Gtos ${monthShort}</span>
+                <span class="text-[11px] sm:text-sm font-bold text-orange-300 whitespace-nowrap">-${fmtEur(summary.monthExpenseTotal)}</span>
               </div>
             </div>
           </div>
 
-          <!-- Botón Repartir Sueldo integrado limpiamente sin solaparse con nada -->
-          <div class="mt-3 pt-3 border-t border-stoneInk-700/70 flex items-center justify-between gap-2">
-            <span class="text-[11px] text-stoneInk-400 font-medium truncate">Distribución de nómina en ${monthName}</span>
+          <!-- Fila Repartir Sueldo con texto siempre en 2 líneas bien proporcionadas -->
+          <div class="mt-3 pt-3 border-t border-stoneInk-700/70 flex items-center justify-between gap-3">
+            <div class="text-[11px] text-stoneInk-400 font-medium leading-tight">
+              <span class="block">Distribución de nómina</span>
+              <span class="block text-stoneInk-300 font-semibold">en ${monthName}</span>
+            </div>
             <button onclick="openSalarySplitModal()"
-              class="flex items-center gap-1.5 bg-emeraldPro-600 hover:bg-emeraldPro-700 text-white rounded-xl px-3 py-2 text-xs font-extrabold shadow-sm transition-all active:scale-95 shrink-0">
+              class="flex items-center gap-1.5 bg-emeraldPro-600 hover:bg-emeraldPro-700 text-white rounded-xl px-3.5 py-2 text-xs font-extrabold shadow-sm transition-all active:scale-95 shrink-0">
               <i class="ph-bold ph-coins text-sm"></i>
               <span>Repartir sueldo</span>
             </button>
           </div>
         </div>
 
-        <!-- Cabecera capítulos + botones adaptados a móvil sin desbordar -->
+        <!-- Cabecera capítulos + selector desplegable de orden + botones -->
         <div class="mb-3 space-y-2.5">
-          <div class="flex items-baseline justify-between gap-2">
-            <h2 class="text-base font-extrabold text-stoneInk-900">Capítulos · ${monthName} (${book.year})</h2>
-            <span class="text-[11px] text-stoneInk-500 shrink-0">Orden A–Z</span>
+          <div class="flex items-center justify-between gap-2">
+            <h2 class="text-base font-extrabold text-stoneInk-900 truncate">Capítulos · ${monthName} (${book.year})</h2>
+            <div class="relative shrink-0">
+              <select onchange="setChapterSortMode(this.value)" aria-label="Ordenar capítulos"
+                class="appearance-none bg-white border border-cream-300 rounded-xl pl-2.5 pr-7 py-1.5 text-[11px] font-extrabold text-stoneInk-700 focus:outline-none cursor-pointer shadow-sm">
+                <option value="az" ${chapterSortMode === 'az' ? 'selected' : ''}>Orden: A–Z</option>
+                <option value="za" ${chapterSortMode === 'za' ? 'selected' : ''}>Orden: Z–A</option>
+                <option value="bal_asc" ${chapterSortMode === 'bal_asc' ? 'selected' : ''}>Menor a mayor €</option>
+                <option value="bal_desc" ${chapterSortMode === 'bal_desc' ? 'selected' : ''}>Mayor a menor €</option>
+              </select>
+              <i class="ph-bold ph-caret-down text-[10px] text-stoneInk-500 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2"></i>
+            </div>
           </div>
+
           <div class="grid grid-cols-2 gap-2">
             <button onclick="openNewChapterModal()"
               class="flex items-center justify-center gap-1.5 bg-white hover:bg-cream-50 border border-cream-300 rounded-xl py-2.5 px-3 text-xs font-extrabold text-stoneInk-800 shadow-sm active:scale-95">
@@ -884,7 +1000,7 @@
     }
 
     // =========================================================================
-    // 6. VISTA 2: TABLA ANUAL (ORDEN ALFABÉTICO + CAPÍTULOS CERRADOS EN GRIS)
+    // 6. VISTA 2: TABLA ANUAL
     // =========================================================================
     function renderTableView() {
       const book = getActiveBook();
@@ -1036,7 +1152,7 @@
     }
 
     // =========================================================================
-    // 7. VISTA 3: CRONOLÓGICO (DESPLEGABLES + KPI EN UNA SOLA LÍNEA)
+    // 7. VISTA 3: CRONOLÓGICO
     // =========================================================================
     function initChronoListeners() {
       const searchInput = document.getElementById('chronoSearchInput');
@@ -1223,7 +1339,7 @@
     }
 
     // =========================================================================
-    // 7B. VISTA 4: GRÁFICOS ANALÍTICOS (100% OFFLINE SVG INTERACTIVO)
+    // 7B. VISTA 4: GRÁFICOS ANALÍTICOS (SIN OPCIÓN DISPONIBLE EN TARTA)
     // =========================================================================
     function setChartDonutMode(mode) {
       chartDonutMode = mode;
@@ -1256,7 +1372,6 @@
         return;
       }
 
-      // 1. KPIs Anuales rápidos (Saldo actual = saldo acumulado final)
       let peakMonthIdx = 0;
       let peakMonthVal = 0;
       summary.monthlyExpense.forEach((v, idx) => {
@@ -1266,7 +1381,6 @@
         }
       });
 
-      // 2. Gráfico combinado interactivo: Barras (Ingresos vs Gastos) + Línea (Saldo Acumulado)
       let runningBal = summary.totalInitial;
       const cumulativeByMonth = Array.from({ length: 12 }, (_, m) => {
         runningBal += summary.monthlyIncome[m] - summary.monthlyExpense[m];
@@ -1377,7 +1491,6 @@
           </p>
         `;
 
-      // 3. Gráfico Donut / Tarta por Capítulos con paleta diferenciada y selector de mes
       let donutTitle = '';
       let rawSlices = [];
 
@@ -1457,7 +1570,6 @@
       }
 
       document.getElementById('view-charts').innerHTML = `
-        <!-- 1. Tarjetas Resumen Anual -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           <div class="bg-white border border-cream-300 rounded-2xl p-3 shadow-sm">
             <span class="text-[10px] font-bold uppercase text-stoneInk-400 block">Ingresos ${book.year}</span>
@@ -1485,7 +1597,6 @@
           </div>
         </div>
 
-        <!-- 2. Gráfico Barras + Línea: Evolución Mensual -->
         <div class="bg-white border border-cream-300 rounded-2xl p-4 shadow-sm space-y-3">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -1512,7 +1623,6 @@
           ${inspectedBannerHtml}
         </div>
 
-        <!-- 3. Gráfico Donut / Tarta por Capítulos con selector de mes (Gtos Año y Por Mes) -->
         <div class="bg-white border border-cream-300 rounded-2xl p-4 shadow-sm space-y-3">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
@@ -1549,8 +1659,7 @@
     }
 
     // =========================================================================
-    // 8. MODALES: REPARTO SUELDO MULTI-NÓMINA, NUEVO APUNTE SIN PRESELECCIÓN,
-    //    CIERRE/ELIMINACIÓN DE CAPÍTULO CON HISTORIAL Y BLOQUES FILTRADOS
+    // 8. MODALES (REPARTO SUELDO, APUNTES, CAPÍTULOS, BLOQUES DINÁMICOS, AJUSTES)
     // =========================================================================
     function openModal(html) {
       document.getElementById('modalSlot').innerHTML = `
@@ -1565,7 +1674,7 @@
       document.getElementById('modalOverlay').classList.add('hidden');
     }
 
-    // --- A. MODAL REPARTIR SUELDO (MULTI-NÓMINA POR MES + PENDIENTE POR CAPÍTULO) ---
+    // --- A. MODAL REPARTIR SUELDO ---
     function openSalarySplitModal() {
       const book = getActiveBook();
       const activeChapters = getSortedChapters(book.chapters).filter(c => !c.closed);
@@ -1620,7 +1729,6 @@
             </button>
           </div>
 
-          <!-- Lista dinámica por capítulo mostrando Cuota, Ya metido este mes y Pendiente -->
           <div id="splitChaptersRows" class="space-y-2 max-h-60 overflow-y-auto pr-1"></div>
 
           <div id="splitStatusBox" class="bg-stoneInk-900 text-white rounded-2xl p-3.5 flex items-center justify-between text-xs font-mono tabular-nums">
@@ -1707,7 +1815,6 @@
       const totalPending = inputs.reduce((s, inp) => s + (parseFloat(inp.dataset.pendingQuota) || 0), 0);
 
       if (targetTotal <= 0) {
-        // Si el importe está vacío o 0, rellenamos lo pendiente exacto de cada capítulo
         inputs.forEach(inp => {
           inp.value = (parseFloat(inp.dataset.pendingQuota) || 0).toFixed(2);
         });
@@ -1716,7 +1823,6 @@
         return;
       }
 
-      // Si el usuario puso un sueldo parcial (ej. primera nómina del mes), cubrimos lo pendiente en orden o hasta agotar el importe
       let remaining = targetTotal;
       inputs.forEach(inp => {
         const pend = parseFloat(inp.dataset.pendingQuota) || 0;
@@ -1822,7 +1928,7 @@
       showToast(`Sueldo repartido en ${added} capítulos`);
     }
 
-    // --- B. MODAL NUEVO / EDITAR APUNTE (GASTO, INGRESO O TRASPASO ENTRE CAPÍTULOS) ---
+    // --- B. MODAL NUEVO / EDITAR APUNTE ---
     function openTxModal(txId = null, defaultChapterId = null, defaultMonthIdx = null, defaultType = 'expense') {
       const book = getActiveBook();
       const { chapters } = analyzeBook(book, selectedMonth);
@@ -1867,9 +1973,7 @@
       }
 
       const buildChapterOptions = (selectedId) => {
-        const list = existing
-          ? chapters
-          : activeChapters;
+        const list = existing ? chapters : activeChapters;
         return `<option value="">— Selecciona un capítulo —</option>` +
           list.map(c => `
             <option value="${c.id}" ${c.id === selectedId ? 'selected' : ''}>
@@ -1887,7 +1991,6 @@
         </div>
 
         <form onsubmit="saveTransaction(event, '${txId || ''}')" class="p-5 space-y-4 overflow-y-auto">
-          <!-- Selector 3 modos: Gasto / Ingreso / Traspaso -->
           <div class="grid grid-cols-3 gap-1.5 p-1 bg-cream-200 rounded-2xl">
             <label class="cursor-pointer">
               <input type="radio" name="txMode" value="expense" class="peer sr-only" onchange="toggleTxModeFields()" ${initialMode === 'expense' ? 'checked' : ''} />
@@ -2019,7 +2122,6 @@
         ? Math.max(0, Math.min(11, parseInt(date.split('-')[1], 10) - 1))
         : selectedMonth;
 
-      // Si estamos editando, eliminamos el apunte o pareja de traspaso anterior antes de grabar el nuevo
       if (txId) {
         const prev = book.transactions.find(t => t.id === txId);
         if (prev && prev.transferId) {
@@ -2101,7 +2203,7 @@
       showToast('Apunte eliminado');
     }
 
-    // --- E. MODAL DETALLE DE CAPÍTULO, EDICIÓN Y ELIMINACIÓN (CONSERVANDO HISTORIAL HASTA FECHA DE CIERRE) ---
+    // --- E. MODAL DETALLE Y ELIMINACIÓN DE CAPÍTULO ---
     function openChapterModal(chapterId) {
       const book = getActiveBook();
       const { chapters } = analyzeBook(book, selectedMonth);
@@ -2202,13 +2304,6 @@
       `);
     }
 
-    /**
-     * Regla de eliminación de capítulo:
-     * - Si tiene saldo != 0,00 € -> obliga a traspasar ese saldo a otro capítulo activo en la fecha de cierre.
-     * - El capítulo pasa a estado `closed: true` con `closedDate` y `closedMonth`, conservando sus datos históricos
-     *   en gris hasta la fecha de cierre sin descuadrar los meses pasados.
-     * - Si tiene saldo 0,00 € y 0 apuntes -> borrado limpio directo.
-     */
     function initiateDeleteChapter(chapterId) {
       const book = getActiveBook();
       const { chapters } = analyzeBook(book, 11);
@@ -2224,7 +2319,6 @@
         ? today.toISOString().slice(0, 10)
         : `${book.year}-${String(selectedMonth + 1).padStart(2, '0')}-28`;
 
-      // Si saldo es 0,00 € y no tiene apuntes -> borrado definitivo limpio
       if (!hasBalance && chTxs.length === 0) {
         openModal(`
           <div class="px-5 pt-4 pb-3 border-b border-cream-200 flex items-center justify-between bg-white">
@@ -2252,7 +2346,6 @@
         return;
       }
 
-      // Si tiene saldo 0,00 € pero SÍ tiene historial -> marcar como cerrado en fecha manteniendo su historial gris
       if (!hasBalance && chTxs.length > 0) {
         openModal(`
           <div class="px-5 pt-4 pb-3 border-b border-cream-200 flex items-center justify-between bg-white">
@@ -2285,7 +2378,6 @@
         return;
       }
 
-      // Tiene saldo != 0 -> OBLIGATORIO traspasar a otro capítulo activo antes de cerrar
       if (otherActiveChapters.length === 0) {
         openModal(`
           <div class="px-5 pt-4 pb-3 border-b border-cream-200 flex items-center justify-between bg-white">
@@ -2431,8 +2523,6 @@
       const bal = sourceCh.annualEndBalance;
       const trId = 'tr_close_' + Date.now();
 
-      // Si el saldo es positivo: salida del capítulo cerrado -> entrada en destino
-      // Si el saldo es negativo (deuda): entrada en capítulo cerrado -> salida del destino para cubrirlo
       if (bal > 0) {
         book.transactions.push({
           id: `${trId}_out`,
@@ -2484,7 +2574,6 @@
         });
       }
 
-      // Marcar el capítulo como cerrado/eliminado conservando todo su historial en gris
       const rawCh = book.chapters.find(c => c.id === sourceCh.id);
       if (rawCh) {
         rawCh.closed = true;
@@ -2562,7 +2651,7 @@
       `);
     }
 
-    // --- D. EDITAR SALDO INICIAL DESDE LA TABLA ANUAL ---
+    // --- D. EDITAR SALDO INICIAL / NUEVO CAPÍTULO ---
     function openEditInitialBalanceModal(chapterId) {
       const book = getActiveBook();
       const ch = book.chapters.find(c => c.id === chapterId);
@@ -2673,11 +2762,38 @@
       showToast(`Capítulo "${name}" creado`);
     }
 
-    // --- F. GESTOR DE BLOQUES (PERSONAL / HOGAR) Y AÑOS FILTRADOS POR BLOQUE ---
+    // --- F. GESTOR DE BLOQUES (CREAR / BORRAR BLOQUES + CREAR AÑOS) ---
     function openWorkspaceModal() {
       const active = getActiveBook();
-      const personalYears = getBooksByCategory('personal');
-      const hogarYears = getBooksByCategory('hogar');
+      const workspaces = getWorkspaces();
+      const canDeleteBlock = workspaces.length > 1;
+
+      const blocksGridHtml = workspaces.map(ws => {
+        const wsBooks = getBooksByCategory(ws.id);
+        const isActive = active.category === ws.id;
+        return `
+          <div class="relative rounded-2xl border-2 transition-all ${
+            isActive
+              ? `${getWorkspaceBorderClass(ws.color)} bg-white shadow-sm`
+              : 'border-cream-300 bg-cream-100 hover:bg-white'
+          }">
+            <button type="button" onclick="switchCategory('${ws.id}')" class="w-full p-3.5 text-left">
+              <div class="w-9 h-9 rounded-xl ${getWorkspaceBgClass(ws.color)} text-white flex items-center justify-center mb-2">
+                <i class="ph-bold ${ws.icon} text-lg"></i>
+              </div>
+              <p class="font-extrabold text-sm text-stoneInk-900 truncate pr-6">${esc(ws.name)}</p>
+              <p class="text-[11px] text-stoneInk-500 mt-0.5">${formatYearsSummary(wsBooks)}</p>
+            </button>
+
+            ${canDeleteBlock ? `
+              <button type="button" onclick="confirmDeleteWorkspace('${ws.id}')" title="Eliminar bloque"
+                class="absolute top-2.5 right-2.5 w-7 h-7 rounded-lg bg-cream-200/80 hover:bg-rose-100 text-stoneInk-500 hover:text-rose-600 flex items-center justify-center transition-colors">
+                <i class="ph-bold ph-trash text-xs"></i>
+              </button>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
 
       openModal(`
         <div class="px-5 pt-4 pb-3 border-b border-cream-200 flex items-center justify-between bg-white">
@@ -2689,33 +2805,35 @@
 
         <div class="p-5 overflow-y-auto space-y-4">
           <div class="grid grid-cols-2 gap-3">
-            <button type="button" onclick="switchCategory('personal')"
-              class="p-3.5 rounded-2xl border-2 text-left transition-all ${
-                active.category === 'personal'
-                  ? 'border-emeraldPro-700 bg-white shadow-sm'
-                  : 'border-cream-300 bg-cream-100 hover:bg-white'
-              }">
-              <div class="w-9 h-9 rounded-xl bg-emeraldPro-700 text-white flex items-center justify-center mb-2">
-                <i class="ph-bold ph-user text-lg"></i>
-              </div>
-              <p class="font-extrabold text-sm text-stoneInk-900">Personal</p>
-              <p class="text-[11px] text-stoneInk-500 mt-0.5">${personalYears.length} años (${personalYears[personalYears.length - 1]?.year}–${personalYears[0]?.year})</p>
-            </button>
-
-            <button type="button" onclick="switchCategory('hogar')"
-              class="p-3.5 rounded-2xl border-2 text-left transition-all ${
-                active.category === 'hogar'
-                  ? 'border-terra-600 bg-white shadow-sm'
-                  : 'border-cream-300 bg-cream-100 hover:bg-white'
-              }">
-              <div class="w-9 h-9 rounded-xl bg-terra-600 text-white flex items-center justify-center mb-2">
-                <i class="ph-bold ph-house-line text-lg"></i>
-              </div>
-              <p class="font-extrabold text-sm text-stoneInk-900">Hogar</p>
-              <p class="text-[11px] text-stoneInk-500 mt-0.5">${hogarYears.length} ${hogarYears.length === 1 ? 'año' : 'años'}</p>
-            </button>
+            ${blocksGridHtml}
           </div>
 
+          <!-- Crear nuevo bloque -->
+          <form onsubmit="createNewWorkspace(event)" class="bg-white border border-cream-300 rounded-2xl p-4 space-y-3">
+            <p class="text-xs font-extrabold text-stoneInk-900 flex items-center gap-1.5">
+              <i class="ph-bold ph-folder-simple-plus text-terra-600 text-base"></i>
+              <span>Crear nuevo bloque</span>
+            </p>
+            <div class="grid grid-cols-12 gap-2">
+              <div class="col-span-7">
+                <input type="text" id="newBlockNameInput" required placeholder="Ej. Furgoneta, Ahorro, Viajes..."
+                  class="w-full bg-cream-100 border border-cream-300 rounded-xl px-3 py-2 text-xs font-bold text-stoneInk-900 focus:outline-none" />
+              </div>
+              <div class="col-span-5">
+                <select id="newBlockPresetSelect"
+                  class="w-full bg-cream-100 border border-cream-300 rounded-xl px-2.5 py-2 text-xs font-bold text-stoneInk-800 focus:outline-none">
+                  ${WORKSPACE_PRESETS.map((p, idx) => `
+                    <option value="${idx}">${p.label}</option>
+                  `).join('')}
+                </select>
+              </div>
+            </div>
+            <button type="submit" class="w-full py-2.5 rounded-xl bg-emeraldPro-700 hover:bg-emeraldPro-600 text-white text-xs font-extrabold">
+              + Añadir Bloque
+            </button>
+          </form>
+
+          <!-- Crear nuevo año en un bloque existente -->
           <form onsubmit="createNewYearBook(event)" class="bg-cream-200/80 border border-cream-300 rounded-2xl p-4 space-y-3">
             <p class="text-xs font-extrabold text-stoneInk-900 flex items-center gap-1.5">
               <i class="ph-bold ph-calendar-plus text-emeraldPro-700 text-base"></i>
@@ -2727,8 +2845,9 @@
                 <label class="block text-[10px] font-bold text-stoneInk-600 mb-1">Bloque destino</label>
                 <select id="newYearCategory" onchange="refreshCopySourceOptions()"
                   class="w-full bg-white border border-cream-300 rounded-xl px-3 py-2 text-xs font-bold">
-                  <option value="personal" ${active.category === 'personal' ? 'selected' : ''}>Personal</option>
-                  <option value="hogar" ${active.category === 'hogar' ? 'selected' : ''}>Hogar</option>
+                  ${workspaces.map(w => `
+                    <option value="${w.id}" ${active.category === w.id ? 'selected' : ''}>${esc(w.name)}</option>
+                  `).join('')}
                 </select>
               </div>
               <div>
@@ -2757,11 +2876,104 @@
       refreshCopySourceOptions();
     }
 
-    /**
-     * Filtra estrictamente el desplegable de origen para mostrar SOLO los años del bloque seleccionado.
-     */
+    function createNewWorkspace(e) {
+      e.preventDefault();
+      const name = document.getElementById('newBlockNameInput').value.trim();
+      if (!name) return;
+
+      const presetIdx = parseInt(document.getElementById('newBlockPresetSelect').value, 10) || 0;
+      const preset = WORKSPACE_PRESETS[presetIdx] || WORKSPACE_PRESETS[0];
+
+      const slug = name
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_|_$/g, '') || 'bloque';
+
+      const blockId = `${slug}_${Date.now()}`;
+      const newBookId = `${blockId}_${CURRENT_REAL_YEAR}`;
+
+      state.workspaces.push({
+        id: blockId,
+        name,
+        icon: preset.icon,
+        color: preset.color
+      });
+
+      state.books.push({
+        id: newBookId,
+        category: blockId,
+        year: CURRENT_REAL_YEAR,
+        chapters: [],
+        transactions: []
+      });
+
+      state.activeCategory = blockId;
+      state.activeBookId = newBookId;
+      chronoFilter.chapterId = 'all';
+      saveState();
+      closeModal();
+      renderAll();
+      showToast(`Bloque "${name}" creado`);
+    }
+
+    function confirmDeleteWorkspace(wsId) {
+      const workspaces = getWorkspaces();
+      if (workspaces.length <= 1) {
+        showToast('Debe quedar al menos un bloque activo', 'error');
+        return;
+      }
+      const ws = getWorkspaceInfo(wsId);
+      const wsBooks = getBooksByCategory(wsId);
+
+      openModal(`
+        <div class="px-5 pt-4 pb-3 border-b border-cream-200 flex items-center justify-between bg-white">
+          <h3 class="font-extrabold text-base text-rose-700">Eliminar bloque</h3>
+          <button onclick="openWorkspaceModal()" class="w-8 h-8 rounded-full bg-cream-200 flex items-center justify-center text-stoneInk-700">
+            <i class="ph-bold ph-x"></i>
+          </button>
+        </div>
+        <div class="p-5 space-y-4">
+          <p class="text-xs text-stoneInk-700 leading-relaxed">
+            ¿Seguro que quieres eliminar el bloque <strong>"${esc(ws.name)}"</strong> y todos sus años (${formatYearsSummary(wsBooks)})? Esta acción no se puede deshacer.
+          </p>
+          <div class="flex gap-2">
+            <button type="button" onclick="openWorkspaceModal()"
+              class="flex-1 py-3 rounded-2xl bg-cream-200 text-stoneInk-800 font-extrabold text-xs">
+              Cancelar
+            </button>
+            <button type="button" onclick="executeDeleteWorkspace('${wsId}')"
+              class="flex-1 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs">
+              Eliminar bloque
+            </button>
+          </div>
+        </div>
+      `);
+    }
+
+    function executeDeleteWorkspace(wsId) {
+      const ws = getWorkspaceInfo(wsId);
+      state.workspaces = getWorkspaces().filter(w => w.id !== wsId);
+      state.books = state.books.filter(b => b.category !== wsId);
+
+      if (state.activeCategory === wsId) {
+        const nextWs = state.workspaces[0];
+        state.activeCategory = nextWs.id;
+        const nextBooks = getBooksByCategory(nextWs.id);
+        state.activeBookId = nextBooks[0]?.id || '';
+      }
+
+      chronoFilter.chapterId = 'all';
+      saveState();
+      closeModal();
+      renderAll();
+      showToast(`Bloque "${ws.name}" eliminado`);
+    }
+
     function refreshCopySourceOptions() {
       const selectedCat = document.getElementById('newYearCategory').value;
+      const ws = getWorkspaceInfo(selectedCat);
       const catBooks = getBooksByCategory(selectedCat);
       const selectEl = document.getElementById('copyFromBookSelect');
       const yearInput = document.getElementById('newYearNumber');
@@ -2770,10 +2982,9 @@
         yearInput.value = catBooks[0].year + 1;
       }
 
-      const catLabel = selectedCat === 'personal' ? 'Personal' : 'Hogar';
       selectEl.innerHTML = catBooks.map((b, idx) => `
         <option value="${b.id}" ${idx === 0 ? 'selected' : ''}>
-          ${catLabel} · ${b.year} (${b.chapters.filter(c => !c.closed).length} cap. activos)
+          ${esc(ws.name)} · ${b.year} (${b.chapters.filter(c => !c.closed).length} cap. activos)
         </option>
       `).join('') + `<option value="blank">Empezar vacío (0 capítulos)</option>`;
 
@@ -2821,12 +3032,13 @@
     function createNewYearBook(e) {
       e.preventDefault();
       const cat = document.getElementById('newYearCategory').value;
-      const year = parseInt(document.getElementById('newYearNumber').value, 10) || 2027;
+      const ws = getWorkspaceInfo(cat);
+      const year = parseInt(document.getElementById('newYearNumber').value, 10) || (CURRENT_REAL_YEAR + 1);
       const srcId = document.getElementById('copyFromBookSelect').value;
 
       const exists = state.books.find(b => b.category === cat && b.year === year);
       if (exists) {
-        showToast(`Ya existe ${cat === 'personal' ? 'Personal' : 'Hogar'} ${year}`, 'error');
+        showToast(`Ya existe ${ws.name} ${year}`, 'error');
         return;
       }
 
@@ -2859,7 +3071,7 @@
       saveState();
       closeModal();
       renderAll();
-      showToast(`Creado ${cat === 'personal' ? 'Personal' : 'Hogar'} ${year}`);
+      showToast(`Creado ${ws.name} ${year}`);
     }
 
     // --- G. AJUSTES, COPIA DE SEGURIDAD Y RESTAURACIÓN ---
@@ -2913,7 +3125,7 @@
           <div class="pt-2 border-t border-cream-200">
             <button onclick="restoreExcelDefault()"
               class="w-full py-2.5 text-xs font-extrabold text-terra-600 hover:bg-terra-50 rounded-xl transition-colors">
-              Restaurar datos originales del Excel (2019–2026)
+              Restaurar valores de fábrica
             </button>
           </div>
         </div>
@@ -2922,13 +3134,13 @@
 
     function exportBookCSV() {
       const book = getActiveBook();
+      const ws = getWorkspaceInfo(book.category);
       const chMap = Object.fromEntries(book.chapters.map(c => [c.id, c.name]));
       const rows = [['Bloque', 'Año', 'Fecha', 'Mes', 'Capitulo', 'Tipo', 'Importe', 'Concepto', 'Nota']];
-      const catLabel = book.category === 'personal' ? 'Personal' : 'Hogar';
 
       book.transactions.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')).forEach(t => {
         rows.push([
-          catLabel,
+          `"${ws.name.replace(/"/g, '""')}"`,
           book.year,
           t.date,
           MONTHS_FULL[getTxMonth(t)],
@@ -2941,12 +3153,12 @@
       });
 
       const csv = '\uFEFF' + rows.map(r => r.join(';')).join('\n');
-      triggerDownload(csv, `${catLabel}_${book.year}.csv`, 'text/csv;charset=utf-8;');
+      triggerDownload(csv, `${ws.name}_${book.year}.csv`, 'text/csv;charset=utf-8;');
       showToast('CSV descargado');
     }
 
     function exportFullJSON() {
-      triggerDownload(JSON.stringify(state, null, 2), `MisSobres_2019_2026_${new Date().toISOString().slice(0, 10)}.json`, 'application/json');
+      triggerDownload(JSON.stringify(state, null, 2), `MisSobres_Backup_${new Date().toISOString().slice(0, 10)}.json`, 'application/json');
       showToast('Copia JSON descargada');
     }
 
@@ -2958,7 +3170,7 @@
         try {
           const parsed = JSON.parse(ev.target.result);
           if (parsed && Array.isArray(parsed.books)) {
-            state = parsed;
+            state = ensureWorkspacesIntegrity(parsed);
             saveState();
             closeModal();
             renderAll();
@@ -2978,7 +3190,7 @@
       saveState();
       closeModal();
       renderAll();
-      showToast('Datos originales 2019–2026 restaurados');
+      showToast('Valores de fábrica restaurados');
     }
 
     function triggerDownload(content, filename, mime) {
