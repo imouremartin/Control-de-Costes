@@ -379,19 +379,33 @@
     };
 
     // =========================================================================
-    // 2. GESTIÓN DE ESTADO (BLOQUES DINÁMICOS + AÑOS + ORDENACIÓN)
+    // 2. GESTIÓN DE ESTADO (BLOQUES DINÁMICOS + AÑOS + ORDENACIÓN + GRÁFICOS)
     // =========================================================================
     const NOW = new Date();
     const CURRENT_REAL_YEAR = NOW.getFullYear();
     const CURRENT_REAL_MONTH = NOW.getMonth(); // 0..11
 
+    function getTodayISO() {
+      const d = new Date();
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
     let state = loadState();
     let currentView = 'chapters'; // 'chapters' | 'table' | 'chrono' | 'charts'
-    let selectedMonth = CURRENT_REAL_MONTH; // Arranca en el mes real actual
+    let selectedMonth = CURRENT_REAL_MONTH;
     let chapterSortMode = 'az'; // 'az' | 'za' | 'bal_asc' | 'bal_desc'
+
+    // Estados de los gráficos
+    let chartMonthlyChapterFilter = 'all'; // 'all' o chapterId del libro activo
+    let chartInspectMonth = null;
+    let chartAnnualChapterFilter = 'all'; // 'all' o nombre normalizado del capítulo en el bloque
+    let chartInspectYear = null;
     let chartDonutMode = 'year_expense'; // 'year_expense' | 'month_expense'
     let chartDonutMonth = CURRENT_REAL_MONTH;
-    let chartInspectMonth = null;
+
     let chronoFilter = {
       search: '',
       chapterId: 'all',
@@ -566,9 +580,6 @@
       return `${sortedAsc.length} años (${sortedAsc[0].year}–${sortedAsc[sortedAsc.length - 1].year})`;
     }
 
-    /**
-     * Devuelve true si el libro/mes seleccionado es el mes real en curso o cualquier mes/año futuro.
-     */
     function isCurrentOrFutureMonth(bookYear, monthIdx) {
       const y = Number(bookYear);
       const m = Number(monthIdx);
@@ -749,6 +760,8 @@
       const b = getActiveBook();
       state.activeCategory = b.category;
       chronoFilter.chapterId = 'all';
+      chartMonthlyChapterFilter = 'all';
+      chartInspectMonth = null;
       saveState();
       renderAll();
     }
@@ -974,7 +987,7 @@
           </div>
         </div>
 
-        <!-- Cabecera capítulos simplificada + selector desplegable de orden + botones -->
+        <!-- Cabecera capítulos + selector desplegable de orden + botones -->
         <div class="mb-3 space-y-2.5">
           <div class="flex items-center justify-between gap-2">
             <h2 class="text-base font-extrabold text-stoneInk-900">Capítulos</h2>
@@ -1349,8 +1362,18 @@
     }
 
     // =========================================================================
-    // 7B. VISTA 4: GRÁFICOS ANALÍTICOS
+    // 7B. VISTA 4: GRÁFICOS ANALÍTICOS (MENSUAL + ANUAL CON FILTRO CAPÍTULOS)
     // =========================================================================
+    function setChartMonthlyChapterFilter(val) {
+      chartMonthlyChapterFilter = val;
+      renderChartsView();
+    }
+
+    function setChartAnnualChapterFilter(val) {
+      chartAnnualChapterFilter = val;
+      renderChartsView();
+    }
+
     function setChartDonutMode(mode) {
       chartDonutMode = mode;
       renderChartsView();
@@ -1367,42 +1390,18 @@
       renderChartsView();
     }
 
-    function renderChartsView() {
-      const book = getActiveBook();
-      const { chapters, summary } = analyzeBook(book, chartDonutMonth);
+    function inspectChartYear(yr) {
+      chartInspectYear = (chartInspectYear === yr) ? null : yr;
+      renderChartsView();
+    }
 
-      if (chapters.length === 0) {
-        document.getElementById('view-charts').innerHTML = `
-          <div class="bg-white border border-cream-300 rounded-2xl p-8 text-center">
-            <i class="ph-duotone ph-chart-pie-slice text-4xl text-stoneInk-400"></i>
-            <p class="text-sm font-bold text-stoneInk-700 mt-2">Aún no hay datos en ${book.year}</p>
-            <p class="text-xs text-stoneInk-500 mt-1">Añade capítulos y movimientos para visualizar tus gráficos.</p>
-          </div>
-        `;
-        return;
-      }
-
-      let peakMonthIdx = 0;
-      let peakMonthVal = 0;
-      summary.monthlyExpense.forEach((v, idx) => {
-        if (v > peakMonthVal) {
-          peakMonthVal = v;
-          peakMonthIdx = idx;
-        }
-      });
-
-      let runningBal = summary.totalInitial;
-      const cumulativeByMonth = Array.from({ length: 12 }, (_, m) => {
-        runningBal += summary.monthlyIncome[m] - summary.monthlyExpense[m];
-        return Number(runningBal.toFixed(2));
-      });
-
-      const allVals = [
-        ...summary.monthlyIncome,
-        ...summary.monthlyExpense,
-        ...cumulativeByMonth,
-        0
-      ];
+    /**
+     * Genera un gráfico combinado SVG (barras de ingresos/gastos + línea de acumulado)
+     * reutilizable tanto para los 12 meses como para la serie histórica de años.
+     */
+    function buildComboChartSVG({ labels, incomes, expenses, cumulatives, inspectedIndex, onSelectCallbackName }) {
+      const n = Math.max(labels.length, 1);
+      const allVals = [...incomes, ...expenses, ...cumulatives, 0];
       const maxVal = Math.max(...allVals, 100);
       const minVal = Math.min(...allVals, 0);
       const span = Math.max(maxVal - minVal, 1);
@@ -1415,7 +1414,7 @@
       const padB = 28;
       const plotW = svgW - padL - padR;
       const plotH = svgH - padT - padB;
-      const colStep = plotW / 12;
+      const colStep = plotW / n;
 
       const yScale = (val) => padT + ((maxVal - val) / span) * plotH;
       const yZero = yScale(0);
@@ -1427,21 +1426,21 @@
       let labelsSvg = '';
       let hitZonesSvg = '';
 
-      for (let m = 0; m < 12; m++) {
-        const colLeft = padL + m * colStep;
+      for (let i = 0; i < n; i++) {
+        const colLeft = padL + i * colStep;
         const cx = colLeft + colStep / 2;
-        const inc = summary.monthlyIncome[m];
-        const exp = summary.monthlyExpense[m];
-        const cum = cumulativeByMonth[m];
-        const isInspected = chartInspectMonth === m;
+        const inc = incomes[i] || 0;
+        const exp = expenses[i] || 0;
+        const cum = cumulatives[i] || 0;
+        const isInspected = inspectedIndex === i;
 
         if (isInspected) {
           highlightSvg += `
-            <rect x="${(colLeft + 3).toFixed(1)}" y="${padT - 8}" width="${(colStep - 6).toFixed(1)}" height="${(plotH + 30).toFixed(1)}" rx="10" fill="#F0FDFA" stroke="#0F766E" stroke-width="1.5" />
+            <rect x="${(colLeft + 3).toFixed(1)}" y="${padT - 8}" width="${Math.max(12, colStep - 6).toFixed(1)}" height="${(plotH + 30).toFixed(1)}" rx="10" fill="#F0FDFA" stroke="#0F766E" stroke-width="1.5" />
           `;
         }
 
-        const barW = Math.min(14, colStep * 0.28);
+        const barW = Math.min(20, Math.max(6, colStep * 0.26));
         const yInc = yScale(inc);
         const hInc = Math.max(0, yZero - yInc);
         const yExp = yScale(exp);
@@ -1460,66 +1459,210 @@
 
         labelsSvg += `
           <text x="${cx.toFixed(1)}" y="${svgH - 8}" text-anchor="middle" font-size="11" font-weight="${isInspected ? '800' : '700'}" fill="${isInspected ? '#0F766E' : '#78716C'}">
-            ${MONTHS_SHORT[m]}
+            ${labels[i]}
           </text>
         `;
 
         hitZonesSvg += `
-          <rect x="${colLeft.toFixed(1)}" y="0" width="${colStep.toFixed(1)}" height="${svgH}" fill="transparent" class="cursor-pointer" onclick="inspectChartMonth(${m})" />
+          <rect x="${colLeft.toFixed(1)}" y="0" width="${colStep.toFixed(1)}" height="${svgH}" fill="transparent" class="cursor-pointer" onclick="${onSelectCallbackName}(${i})" />
         `;
       }
 
-      const comboChartSvg = `
+      return `
         <svg viewBox="0 0 ${svgW} ${svgH}" class="w-full h-auto overflow-visible select-none">
           ${highlightSvg}
           <line x1="${padL}" y1="${yZero.toFixed(1)}" x2="${svgW - padR}" y2="${yZero.toFixed(1)}" stroke="#E2DDD2" stroke-width="1.5" stroke-dasharray="4 3" />
           ${barsSvg}
-          <polyline fill="none" stroke="#1C1917" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${linePoints.join(' ')}" />
+          ${n > 1 ? `<polyline fill="none" stroke="#1C1917" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${linePoints.join(' ')}" />` : ''}
           ${dotsSvg}
           ${labelsSvg}
           ${hitZonesSvg}
         </svg>
       `;
+    }
 
-      // Siempre 2 líneas por columna (Título arriba, Importe completo con € en una sola línea debajo)
-      const inspectedBannerHtml = chartInspectMonth !== null
-        ? `
-          <div class="bg-stoneInk-900 text-white rounded-2xl p-3 space-y-2.5 text-xs animate-fade">
-            <div class="flex items-center justify-between gap-2">
-              <div class="flex items-center gap-2">
-                <span class="bg-emeraldPro-600 text-white font-extrabold px-2.5 py-0.5 rounded-lg">${MONTHS_FULL[chartInspectMonth]}</span>
-                <span class="text-stoneInk-300 font-semibold">Detalle del mes</span>
-              </div>
-              <button onclick="inspectChartMonth(${chartInspectMonth})" class="text-[11px] text-stoneInk-400 hover:text-white">Cerrar</button>
+    function buildInspectedDetailBanner(badgeTitle, incVal, expVal, cumVal, closeAction) {
+      return `
+        <div class="bg-stoneInk-900 text-white rounded-2xl p-3 space-y-2.5 text-xs animate-fade">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="bg-emeraldPro-600 text-white font-extrabold px-2.5 py-0.5 rounded-lg">${esc(badgeTitle)}</span>
+              <span class="text-stoneInk-300 font-semibold">Detalle</span>
             </div>
-            <div class="grid grid-cols-3 gap-2 pt-2 border-t border-stoneInk-700/80 text-center">
-              <div class="bg-stoneInk-700/40 rounded-xl px-1.5 py-2 min-w-0">
-                <span class="text-[10px] font-sans uppercase tracking-wider text-stoneInk-400 block">Ing.</span>
-                <span class="font-mono text-xs sm:text-sm font-bold text-emerald-400 tabular-nums whitespace-nowrap block mt-0.5">
-                  +${fmtEur(summary.monthlyIncome[chartInspectMonth])}
-                </span>
-              </div>
-              <div class="bg-stoneInk-700/40 rounded-xl px-1.5 py-2 min-w-0">
-                <span class="text-[10px] font-sans uppercase tracking-wider text-stoneInk-400 block">Gtos</span>
-                <span class="font-mono text-xs sm:text-sm font-bold text-orange-300 tabular-nums whitespace-nowrap block mt-0.5">
-                  -${fmtEur(summary.monthlyExpense[chartInspectMonth])}
-                </span>
-              </div>
-              <div class="bg-stoneInk-700/40 rounded-xl px-1.5 py-2 min-w-0">
-                <span class="text-[10px] font-sans uppercase tracking-wider text-stoneInk-400 block">Acum.</span>
-                <span class="font-mono text-xs sm:text-sm font-extrabold text-white tabular-nums whitespace-nowrap block mt-0.5">
-                  ${fmtEur(cumulativeByMonth[chartInspectMonth])}
-                </span>
-              </div>
+            <button onclick="${closeAction}" class="text-[11px] text-stoneInk-400 hover:text-white">Cerrar</button>
+          </div>
+          <div class="grid grid-cols-3 gap-2 pt-2 border-t border-stoneInk-700/80 text-center">
+            <div class="bg-stoneInk-700/40 rounded-xl px-1.5 py-2 min-w-0">
+              <span class="text-[10px] font-sans uppercase tracking-wider text-stoneInk-400 block">Ing.</span>
+              <span class="font-mono text-xs sm:text-sm font-bold text-emerald-400 tabular-nums whitespace-nowrap block mt-0.5">
+                +${fmtEur(incVal)}
+              </span>
+            </div>
+            <div class="bg-stoneInk-700/40 rounded-xl px-1.5 py-2 min-w-0">
+              <span class="text-[10px] font-sans uppercase tracking-wider text-stoneInk-400 block">Gtos</span>
+              <span class="font-mono text-xs sm:text-sm font-bold text-orange-300 tabular-nums whitespace-nowrap block mt-0.5">
+                -${fmtEur(expVal)}
+              </span>
+            </div>
+            <div class="bg-stoneInk-700/40 rounded-xl px-1.5 py-2 min-w-0">
+              <span class="text-[10px] font-sans uppercase tracking-wider text-stoneInk-400 block">Acum.</span>
+              <span class="font-mono text-xs sm:text-sm font-extrabold text-white tabular-nums whitespace-nowrap block mt-0.5">
+                ${fmtEur(cumVal)}
+              </span>
             </div>
           </div>
-        `
+        </div>
+      `;
+    }
+
+    function renderChartsView() {
+      const book = getActiveBook();
+      const ws = getWorkspaceInfo(book.category);
+      const { chapters, summary } = analyzeBook(book, chartDonutMonth);
+
+      if (chapters.length === 0) {
+        document.getElementById('view-charts').innerHTML = `
+          <div class="bg-white border border-cream-300 rounded-2xl p-8 text-center">
+            <i class="ph-duotone ph-chart-pie-slice text-4xl text-stoneInk-400"></i>
+            <p class="text-sm font-bold text-stoneInk-700 mt-2">Aún no hay datos en ${book.year}</p>
+            <p class="text-xs text-stoneInk-500 mt-1">Añade capítulos y movimientos para visualizar tus gráficos.</p>
+          </div>
+        `;
+        return;
+      }
+
+      // Validar que el capítulo filtrado en mensual siga existiendo en el libro activo
+      if (chartMonthlyChapterFilter !== 'all' && !chapters.some(c => c.id === chartMonthlyChapterFilter)) {
+        chartMonthlyChapterFilter = 'all';
+      }
+
+      let peakMonthIdx = 0;
+      let peakMonthVal = 0;
+      summary.monthlyExpense.forEach((v, idx) => {
+        if (v > peakMonthVal) {
+          peakMonthVal = v;
+          peakMonthIdx = idx;
+        }
+      });
+
+      // --- DATOS GRÁFICO 1: EVOLUCIÓN MENSUAL (FILTRABLE POR CAPÍTULO) ---
+      let mInitial = summary.totalInitial;
+      let mIncomes = summary.monthlyIncome;
+      let mExpenses = summary.monthlyExpense;
+
+      if (chartMonthlyChapterFilter !== 'all') {
+        const targetCh = chapters.find(c => c.id === chartMonthlyChapterFilter);
+        if (targetCh) {
+          mInitial = targetCh.initialBalance;
+          mIncomes = Array.from({ length: 12 }, (_, m) => targetCh.byMonth[m].income);
+          mExpenses = Array.from({ length: 12 }, (_, m) => targetCh.byMonth[m].expense);
+        }
+      }
+
+      let mRunningBal = mInitial;
+      const cumulativeByMonth = Array.from({ length: 12 }, (_, m) => {
+        mRunningBal += mIncomes[m] - mExpenses[m];
+        return Number(mRunningBal.toFixed(2));
+      });
+
+      const monthlyComboSvg = buildComboChartSVG({
+        labels: MONTHS_SHORT,
+        incomes: mIncomes,
+        expenses: mExpenses,
+        cumulatives: cumulativeByMonth,
+        inspectedIndex: chartInspectMonth,
+        onSelectCallbackName: 'inspectChartMonth'
+      });
+
+      const inspectedMonthBannerHtml = chartInspectMonth !== null
+        ? buildInspectedDetailBanner(
+            MONTHS_FULL[chartInspectMonth],
+            mIncomes[chartInspectMonth],
+            mExpenses[chartInspectMonth],
+            cumulativeByMonth[chartInspectMonth],
+            `inspectChartMonth(${chartInspectMonth})`
+          )
         : `
           <p class="text-[11px] text-stoneInk-400 text-center">
             Toca cualquier mes en el gráfico para ver sus cifras exactas de ingresos, gastos y acumulado
           </p>
         `;
 
+      // --- DATOS GRÁFICO 2: EVOLUCIÓN ANUAL HISTÓRICA (FILTRABLE POR CAPÍTULO) ---
+      const categoryBooksAsc = getBooksByCategory(book.category)
+        .filter(b => b.year <= CURRENT_REAL_YEAR)
+        .sort((a, b) => a.year - b.year);
+
+      // Recopilar todos los nombres únicos de capítulos en todo el histórico del bloque
+      const allChapterNamesMap = new Map();
+      categoryBooksAsc.forEach(b => {
+        (b.chapters || []).forEach(c => {
+          const cleanName = (c.name || '').trim();
+          const key = cleanName.toLowerCase();
+          if (cleanName && !allChapterNamesMap.has(key)) {
+            allChapterNamesMap.set(key, cleanName);
+          }
+        });
+      });
+      const annualChapterOptions = Array.from(allChapterNamesMap.entries())
+        .sort((a, b) => a[1].localeCompare(b[1], 'es', { sensitivity: 'base' }));
+
+      if (chartAnnualChapterFilter !== 'all' && !allChapterNamesMap.has(chartAnnualChapterFilter)) {
+        chartAnnualChapterFilter = 'all';
+      }
+
+      const annualYearsLabels = categoryBooksAsc.map(b => String(b.year));
+      const annualIncomes = [];
+      const annualExpenses = [];
+      const annualCumulatives = [];
+
+      categoryBooksAsc.forEach(b => {
+        const analyzed = analyzeBook(b, 11);
+        if (chartAnnualChapterFilter === 'all') {
+          annualIncomes.push(Number(analyzed.summary.totalIncome.toFixed(2)));
+          annualExpenses.push(Number(analyzed.summary.totalExpense.toFixed(2)));
+          annualCumulatives.push(Number(analyzed.summary.totalAnnualEnd.toFixed(2)));
+        } else {
+          const matchingChs = analyzed.chapters.filter(
+            c => (c.name || '').trim().toLowerCase() === chartAnnualChapterFilter
+          );
+          const inc = matchingChs.reduce((s, c) => s + c.totalIncome, 0);
+          const exp = matchingChs.reduce((s, c) => s + c.totalExpense, 0);
+          const endBal = matchingChs.reduce((s, c) => s + c.annualEndBalance, 0);
+          annualIncomes.push(Number(inc.toFixed(2)));
+          annualExpenses.push(Number(exp.toFixed(2)));
+          annualCumulatives.push(Number(endBal.toFixed(2)));
+        }
+      });
+
+      if (chartInspectYear !== null && (chartInspectYear < 0 || chartInspectYear >= annualYearsLabels.length)) {
+        chartInspectYear = null;
+      }
+
+      const annualComboSvg = buildComboChartSVG({
+        labels: annualYearsLabels,
+        incomes: annualIncomes,
+        expenses: annualExpenses,
+        cumulatives: annualCumulatives,
+        inspectedIndex: chartInspectYear,
+        onSelectCallbackName: 'inspectChartYear'
+      });
+
+      const inspectedYearBannerHtml = chartInspectYear !== null
+        ? buildInspectedDetailBanner(
+            `Año ${annualYearsLabels[chartInspectYear]}`,
+            annualIncomes[chartInspectYear],
+            annualExpenses[chartInspectYear],
+            annualCumulatives[chartInspectYear],
+            `inspectChartYear(${chartInspectYear})`
+          )
+        : `
+          <p class="text-[11px] text-stoneInk-400 text-center">
+            Toca cualquier año en el gráfico para ver el resumen anual de ingresos, gastos y saldo acumulado
+          </p>
+        `;
+
+      // --- DATOS GRÁFICO 3: DISTRIBUCIÓN POR CAPÍTULOS (DONUT) ---
       let donutTitle = '';
       let rawSlices = [];
 
@@ -1598,7 +1741,12 @@
         `;
       }
 
+      const yearRangeSubtitle = annualYearsLabels.length > 1
+        ? `${annualYearsLabels[0]}–${annualYearsLabels[annualYearsLabels.length - 1]}`
+        : `${annualYearsLabels[0] || book.year}`;
+
       document.getElementById('view-charts').innerHTML = `
+        <!-- 4 KPIs Resumen del Año -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           <div class="bg-white border border-cream-300 rounded-2xl p-3 shadow-sm">
             <span class="text-[10px] font-bold uppercase text-stoneInk-400 block">Ingresos ${book.year}</span>
@@ -1626,32 +1774,85 @@
           </div>
         </div>
 
+        <!-- Gráfico 1: Evolución Mensual con filtro por capítulo -->
         <div class="bg-white border border-cream-300 rounded-2xl p-4 shadow-sm space-y-3">
-          <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex flex-wrap items-start justify-between gap-2">
             <div>
               <h3 class="font-extrabold text-sm text-stoneInk-900">Evolución Mensual (${book.year})</h3>
               <p class="text-[11px] text-stoneInk-500">Ingresos y gastos por mes frente al saldo acumulado</p>
             </div>
-            <div class="flex items-center gap-3 text-[11px] font-bold">
-              <span class="flex items-center gap-1 text-emeraldPro-700">
-                <span class="w-2.5 h-2.5 rounded-sm bg-emeraldPro-700 inline-block"></span> Ingresos
-              </span>
-              <span class="flex items-center gap-1 text-terra-600">
-                <span class="w-2.5 h-2.5 rounded-sm bg-terra-500 inline-block"></span> Gastos
-              </span>
-              <span class="flex items-center gap-1 text-stoneInk-900">
-                <span class="w-2.5 h-2.5 rounded-full bg-stoneInk-900 inline-block"></span> Acumulado
-              </span>
+
+            <div class="relative shrink-0">
+              <select onchange="setChartMonthlyChapterFilter(this.value)" aria-label="Filtrar evolución mensual por capítulo"
+                class="appearance-none bg-cream-100 border border-cream-300 rounded-xl pl-2.5 pr-7 py-1.5 text-[11px] font-extrabold text-stoneInk-800 focus:outline-none cursor-pointer">
+                <option value="all" ${chartMonthlyChapterFilter === 'all' ? 'selected' : ''}>Todos los capítulos</option>
+                ${chapters.map(c => `
+                  <option value="${c.id}" ${chartMonthlyChapterFilter === c.id ? 'selected' : ''}>${esc(c.name)}</option>
+                `).join('')}
+              </select>
+              <i class="ph-bold ph-caret-down text-[10px] text-stoneInk-500 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2"></i>
             </div>
           </div>
 
-          <div class="pt-1">
-            ${comboChartSvg}
+          <div class="flex items-center gap-3 text-[11px] font-bold">
+            <span class="flex items-center gap-1 text-emeraldPro-700">
+              <span class="w-2.5 h-2.5 rounded-sm bg-emeraldPro-700 inline-block"></span> Ingresos
+            </span>
+            <span class="flex items-center gap-1 text-terra-600">
+              <span class="w-2.5 h-2.5 rounded-sm bg-terra-500 inline-block"></span> Gastos
+            </span>
+            <span class="flex items-center gap-1 text-stoneInk-900">
+              <span class="w-2.5 h-2.5 rounded-full bg-stoneInk-900 inline-block"></span> Acumulado
+            </span>
           </div>
 
-          ${inspectedBannerHtml}
+          <div class="pt-1">
+            ${monthlyComboSvg}
+          </div>
+
+          ${inspectedMonthBannerHtml}
         </div>
 
+        <!-- Gráfico 2: Evolución Anual Histórica con filtro por capítulo -->
+        <div class="bg-white border border-cream-300 rounded-2xl p-4 shadow-sm space-y-3">
+          <div class="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h3 class="font-extrabold text-sm text-stoneInk-900">Evolución Anual · ${esc(ws.name)} (${yearRangeSubtitle})</h3>
+              <p class="text-[11px] text-stoneInk-500">Ingresos y gastos anuales frente al saldo acumulado</p>
+            </div>
+
+            <div class="relative shrink-0">
+              <select onchange="setChartAnnualChapterFilter(this.value)" aria-label="Filtrar evolución anual por capítulo"
+                class="appearance-none bg-cream-100 border border-cream-300 rounded-xl pl-2.5 pr-7 py-1.5 text-[11px] font-extrabold text-stoneInk-800 focus:outline-none cursor-pointer">
+                <option value="all" ${chartAnnualChapterFilter === 'all' ? 'selected' : ''}>Todos los capítulos</option>
+                ${annualChapterOptions.map(([key, label]) => `
+                  <option value="${esc(key)}" ${chartAnnualChapterFilter === key ? 'selected' : ''}>${esc(label)}</option>
+                `).join('')}
+              </select>
+              <i class="ph-bold ph-caret-down text-[10px] text-stoneInk-500 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2"></i>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-3 text-[11px] font-bold">
+            <span class="flex items-center gap-1 text-emeraldPro-700">
+              <span class="w-2.5 h-2.5 rounded-sm bg-emeraldPro-700 inline-block"></span> Ingresos
+            </span>
+            <span class="flex items-center gap-1 text-terra-600">
+              <span class="w-2.5 h-2.5 rounded-sm bg-terra-500 inline-block"></span> Gastos
+            </span>
+            <span class="flex items-center gap-1 text-stoneInk-900">
+              <span class="w-2.5 h-2.5 rounded-full bg-stoneInk-900 inline-block"></span> Acumulado
+            </span>
+          </div>
+
+          <div class="pt-1">
+            ${annualComboSvg}
+          </div>
+
+          ${inspectedYearBannerHtml}
+        </div>
+
+        <!-- Gráfico 3: Distribución por Capítulos (Donut) -->
         <div class="bg-white border border-cream-300 rounded-2xl p-4 shadow-sm space-y-3">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
@@ -1703,7 +1904,7 @@
       document.getElementById('modalOverlay').classList.add('hidden');
     }
 
-    // --- A. MODAL REPARTIR SUELDO ---
+    // --- A. MODAL REPARTIR SUELDO (FECHA POR DEFECTO = HOY) ---
     function openSalarySplitModal() {
       const book = getActiveBook();
       const activeChapters = getSortedChapters(book.chapters).filter(c => !c.closed);
@@ -1713,7 +1914,7 @@
         return;
       }
 
-      const defaultDate = `${book.year}-${String(selectedMonth + 1).padStart(2, '0')}-01`;
+      const defaultDate = getTodayISO();
 
       openModal(`
         <div class="px-5 pt-4 pb-3 border-b border-cream-200 flex items-center justify-between bg-white">
@@ -1777,8 +1978,6 @@
 
     function onSplitMonthChange() {
       const mIdx = parseInt(document.getElementById('splitMonthSelect').value, 10);
-      const book = getActiveBook();
-      document.getElementById('splitDateInput').value = `${book.year}-${String(mIdx + 1).padStart(2, '0')}-01`;
       renderSplitRowsForMonth(mIdx, true);
     }
 
@@ -1924,7 +2123,7 @@
 
       const book = getActiveBook();
       const mIdx = parseInt(document.getElementById('splitMonthSelect').value, 10);
-      const dateStr = document.getElementById('splitDateInput').value || `${book.year}-${String(mIdx + 1).padStart(2, '0')}-01`;
+      const dateStr = document.getElementById('splitDateInput').value || getTodayISO();
 
       let added = 0;
       inputs.forEach((inp, idx) => {
@@ -1957,7 +2156,7 @@
       showToast(`Sueldo repartido en ${added} capítulos`);
     }
 
-    // --- B. MODAL NUEVO / EDITAR APUNTE ---
+    // --- B. MODAL NUEVO / EDITAR APUNTE (FECHA POR DEFECTO = HOY SIEMPRE) ---
     function openTxModal(txId = null, defaultChapterId = null, defaultMonthIdx = null, defaultType = 'expense') {
       const book = getActiveBook();
       const { chapters } = analyzeBook(book, selectedMonth);
@@ -1969,10 +2168,8 @@
         return;
       }
 
-      const mTarget = existing ? getTxMonth(existing) : (defaultMonthIdx !== null ? defaultMonthIdx : selectedMonth);
-      const defaultDate = existing
-        ? existing.date
-        : `${book.year}-${String(mTarget + 1).padStart(2, '0')}-15`;
+      // Para apuntes nuevos, siempre preselecciona el día real actual (hoy)
+      const defaultDate = existing ? existing.date : getTodayISO();
 
       let initialMode = defaultType;
       let fromChId = defaultChapterId || '';
@@ -2342,11 +2539,7 @@
       const chTxs = book.transactions.filter(t => t.chapterId === chapterId);
       const otherActiveChapters = chapters.filter(c => c.id !== chapterId && !c.closed);
       const hasBalance = Math.abs(ch.annualEndBalance) >= 0.005;
-
-      const today = new Date();
-      const defaultDate = today.getFullYear() === book.year
-        ? today.toISOString().slice(0, 10)
-        : `${book.year}-${String(selectedMonth + 1).padStart(2, '0')}-28`;
+      const defaultDate = getTodayISO();
 
       if (!hasBalance && chTxs.length === 0) {
         openModal(`
@@ -2941,6 +3134,10 @@
       state.activeCategory = blockId;
       state.activeBookId = newBookId;
       chronoFilter.chapterId = 'all';
+      chartMonthlyChapterFilter = 'all';
+      chartAnnualChapterFilter = 'all';
+      chartInspectMonth = null;
+      chartInspectYear = null;
       saveState();
       closeModal();
       renderAll();
@@ -2994,6 +3191,10 @@
       }
 
       chronoFilter.chapterId = 'all';
+      chartMonthlyChapterFilter = 'all';
+      chartAnnualChapterFilter = 'all';
+      chartInspectMonth = null;
+      chartInspectYear = null;
       saveState();
       closeModal();
       renderAll();
@@ -3027,6 +3228,10 @@
         state.activeBookId = list[0].id;
       }
       chronoFilter.chapterId = 'all';
+      chartMonthlyChapterFilter = 'all';
+      chartAnnualChapterFilter = 'all';
+      chartInspectMonth = null;
+      chartInspectYear = null;
       saveState();
       closeModal();
       renderAll();
@@ -3097,6 +3302,9 @@
       });
       state.activeCategory = cat;
       state.activeBookId = newId;
+      chartMonthlyChapterFilter = 'all';
+      chartInspectMonth = null;
+      chartInspectYear = null;
       saveState();
       closeModal();
       renderAll();
@@ -3187,7 +3395,7 @@
     }
 
     function exportFullJSON() {
-      triggerDownload(JSON.stringify(state, null, 2), `MisSobres_Backup_${new Date().toISOString().slice(0, 10)}.json`, 'application/json');
+      triggerDownload(JSON.stringify(state, null, 2), `MisSobres_Backup_${getTodayISO()}.json`, 'application/json');
       showToast('Copia JSON descargada');
     }
 
