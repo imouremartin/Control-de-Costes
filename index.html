@@ -365,7 +365,8 @@
       { icon: 'ph-car', color: 'sky', label: 'Vehículo' },
       { icon: 'ph-airplane-tilt', color: 'indigo', label: 'Viajes' },
       { icon: 'ph-briefcase', color: 'amber', label: 'Trabajo' },
-      { icon: 'ph-piggy-bank', color: 'violet', label: 'Ahorro' }
+      { icon: 'ph-piggy-bank', color: 'violet', label: 'Ahorro' },
+      { icon: 'ph-folder-open', color: 'stone', label: 'Otro' }
     ];
 
     // Datasets vacíos por defecto (los datos reales se cargan localmente vía JSON)
@@ -435,7 +436,6 @@
       if (!Array.isArray(st.workspaces) || st.workspaces.length === 0) {
         st.workspaces = DEFAULT_WORKSPACES.map(w => ({ ...w }));
       }
-      // Garantiza que si en el JSON restaurado hay libros de un bloque no registrado, se registre automáticamente
       const existingIds = new Set(st.workspaces.map(w => w.id));
       (st.books || []).forEach(b => {
         if (b.category && !existingIds.has(b.category)) {
@@ -501,7 +501,8 @@
         sky: 'bg-sky-700',
         indigo: 'bg-indigo-700',
         amber: 'bg-amber-600',
-        violet: 'bg-violet-700'
+        violet: 'bg-violet-700',
+        stone: 'bg-stoneInk-700'
       };
       return map[color] || 'bg-emeraldPro-700';
     }
@@ -513,7 +514,8 @@
         sky: 'border-sky-700',
         indigo: 'border-indigo-700',
         amber: 'border-amber-600',
-        violet: 'border-violet-700'
+        violet: 'border-violet-700',
+        stone: 'border-stoneInk-700'
       };
       return map[color] || 'border-emeraldPro-700';
     }
@@ -530,7 +532,6 @@
         const list = getBooksByCategory(state.activeCategory);
         b = list[0] || state.books[0];
         if (!b) {
-          // Respaldo de seguridad si no quedara ningún libro
           const ws = getWorkspaces()[0] || DEFAULT_WORKSPACES[0];
           b = {
             id: `${ws.id}_${CURRENT_REAL_YEAR}`,
@@ -565,28 +566,37 @@
       return `${sortedAsc.length} años (${sortedAsc[0].year}–${sortedAsc[sortedAsc.length - 1].year})`;
     }
 
-    function isCurrentRealMonth(bookYear, monthIdx) {
-      return Number(bookYear) === CURRENT_REAL_YEAR && Number(monthIdx) === CURRENT_REAL_MONTH;
+    /**
+     * Devuelve true si el libro/mes seleccionado es el mes real en curso o cualquier mes/año futuro.
+     */
+    function isCurrentOrFutureMonth(bookYear, monthIdx) {
+      const y = Number(bookYear);
+      const m = Number(monthIdx);
+      if (y > CURRENT_REAL_YEAR) return true;
+      if (y < CURRENT_REAL_YEAR) return false;
+      return m >= CURRENT_REAL_MONTH;
     }
 
     // =========================================================================
-    // 3. FORMATEO Y CÁLCULOS FINANCIEROS
+    // 3. FORMATEO NUMÉRICO CON SEPARADOR DE MILES (PUNTO) Y CÁLCULOS
     // =========================================================================
-    function fmtEur(num) {
+    function formatSpanishNumber(num) {
       const val = Number(num) || 0;
-      return val.toLocaleString('es-ES', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-      }) + ' €';
+      const fixed = val.toFixed(2);
+      const [intPart, decPart] = fixed.split('.');
+      const sign = intPart.startsWith('-') ? '-' : '';
+      const digits = intPart.replace('-', '').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+      return `${sign}${digits},${decPart}`;
+    }
+
+    function fmtEur(num) {
+      return formatSpanishNumber(num) + ' €';
     }
 
     function fmtCell(num) {
       const val = Number(num) || 0;
       if (Math.abs(val) < 0.005) return '—';
-      return val.toLocaleString('es-ES', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-      });
+      return formatSpanishNumber(val);
     }
 
     function getTxMonth(tx) {
@@ -758,7 +768,7 @@
     }
 
     // =========================================================================
-    // 5. VISTA 1: CAPÍTULOS (KPI 1 LÍNEA + ORDENACIÓN + SALDO DISPONIBLE ACTUAL)
+    // 5. VISTA 1: CAPÍTULOS
     // =========================================================================
     function changeSelectedMonth(delta) {
       selectedMonth = (selectedMonth + delta + 12) % 12;
@@ -797,13 +807,13 @@
       const { chapters, summary } = analyzeBook(book, selectedMonth);
       const monthName = MONTHS_FULL[selectedMonth];
       const monthShort = MONTHS_SHORT[selectedMonth];
-      const isCurrentMonth = isCurrentRealMonth(book.year, selectedMonth);
+      const isAvailableLabel = isCurrentOrFutureMonth(book.year, selectedMonth);
 
-      const mainKpiLabel = isCurrentMonth
+      const mainKpiLabel = isAvailableLabel
         ? 'Saldo disponible'
         : `Acumulado cierre ${monthName}`;
 
-      const cardKpiLabel = isCurrentMonth
+      const cardKpiLabel = isAvailableLabel
         ? 'Saldo disponible'
         : `Acum. cierre ${monthShort}`;
 
@@ -903,7 +913,7 @@
           </div>`;
 
       document.getElementById('view-chapters').innerHTML = `
-        <!-- KPI Superior: Siempre 1 línea en cabecera y cifras, y 2 líneas en distribución -->
+        <!-- KPI Superior -->
         <div class="bg-stoneInk-900 text-cream-50 rounded-3xl p-4 shadow-md mb-4">
           <div class="flex items-center justify-between gap-2 pb-3 border-b border-stoneInk-700">
             <button onclick="changeSelectedMonth(-1)" aria-label="Mes anterior"
@@ -951,7 +961,6 @@
             </div>
           </div>
 
-          <!-- Fila Repartir Sueldo con texto siempre en 2 líneas bien proporcionadas -->
           <div class="mt-3 pt-3 border-t border-stoneInk-700/70 flex items-center justify-between gap-3">
             <div class="text-[11px] text-stoneInk-400 font-medium leading-tight">
               <span class="block">Distribución de nómina</span>
@@ -965,10 +974,10 @@
           </div>
         </div>
 
-        <!-- Cabecera capítulos + selector desplegable de orden + botones -->
+        <!-- Cabecera capítulos simplificada + selector desplegable de orden + botones -->
         <div class="mb-3 space-y-2.5">
           <div class="flex items-center justify-between gap-2">
-            <h2 class="text-base font-extrabold text-stoneInk-900 truncate">Capítulos · ${monthName} (${book.year})</h2>
+            <h2 class="text-base font-extrabold text-stoneInk-900">Capítulos</h2>
             <div class="relative shrink-0">
               <select onchange="setChapterSortMode(this.value)" aria-label="Ordenar capítulos"
                 class="appearance-none bg-white border border-cream-300 rounded-xl pl-2.5 pr-7 py-1.5 text-[11px] font-extrabold text-stoneInk-700 focus:outline-none cursor-pointer shadow-sm">
@@ -1233,7 +1242,8 @@
           const note = (tx.note || '').toLowerCase();
           const chName = (chMap[tx.chapterId]?.name || '').toLowerCase();
           const amtComma = String(tx.amount).replace('.', ',');
-          if (!concept.includes(q) && !note.includes(q) && !chName.includes(q) && !amtComma.includes(q) && !String(tx.amount).includes(q)) {
+          const amtFormatted = formatSpanishNumber(tx.amount);
+          if (!concept.includes(q) && !note.includes(q) && !chName.includes(q) && !amtComma.includes(q) && !amtFormatted.includes(q) && !String(tx.amount).includes(q)) {
             return false;
           }
         }
@@ -1339,7 +1349,7 @@
     }
 
     // =========================================================================
-    // 7B. VISTA 4: GRÁFICOS ANALÍTICOS (SIN OPCIÓN DISPONIBLE EN TARTA)
+    // 7B. VISTA 4: GRÁFICOS ANALÍTICOS
     // =========================================================================
     function setChartDonutMode(mode) {
       chartDonutMode = mode;
@@ -1471,17 +1481,36 @@
         </svg>
       `;
 
+      // Siempre 2 líneas por columna (Título arriba, Importe completo con € en una sola línea debajo)
       const inspectedBannerHtml = chartInspectMonth !== null
         ? `
-          <div class="bg-stoneInk-900 text-white rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2 text-xs animate-fade">
-            <div class="flex items-center gap-2">
-              <span class="bg-emeraldPro-600 text-white font-extrabold px-2 py-0.5 rounded-lg">${MONTHS_FULL[chartInspectMonth]}</span>
-              <span class="text-stoneInk-300 font-semibold">Detalle del mes:</span>
+          <div class="bg-stoneInk-900 text-white rounded-2xl p-3 space-y-2.5 text-xs animate-fade">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <span class="bg-emeraldPro-600 text-white font-extrabold px-2.5 py-0.5 rounded-lg">${MONTHS_FULL[chartInspectMonth]}</span>
+                <span class="text-stoneInk-300 font-semibold">Detalle del mes</span>
+              </div>
+              <button onclick="inspectChartMonth(${chartInspectMonth})" class="text-[11px] text-stoneInk-400 hover:text-white">Cerrar</button>
             </div>
-            <div class="flex items-center gap-3 font-mono tabular-nums">
-              <span class="text-emerald-400 font-bold">Ing: +${fmtEur(summary.monthlyIncome[chartInspectMonth])}</span>
-              <span class="text-orange-300 font-bold">Gtos: -${fmtEur(summary.monthlyExpense[chartInspectMonth])}</span>
-              <span class="text-white font-extrabold">Acum: ${fmtEur(cumulativeByMonth[chartInspectMonth])}</span>
+            <div class="grid grid-cols-3 gap-2 pt-2 border-t border-stoneInk-700/80 text-center">
+              <div class="bg-stoneInk-700/40 rounded-xl px-1.5 py-2 min-w-0">
+                <span class="text-[10px] font-sans uppercase tracking-wider text-stoneInk-400 block">Ing.</span>
+                <span class="font-mono text-xs sm:text-sm font-bold text-emerald-400 tabular-nums whitespace-nowrap block mt-0.5">
+                  +${fmtEur(summary.monthlyIncome[chartInspectMonth])}
+                </span>
+              </div>
+              <div class="bg-stoneInk-700/40 rounded-xl px-1.5 py-2 min-w-0">
+                <span class="text-[10px] font-sans uppercase tracking-wider text-stoneInk-400 block">Gtos</span>
+                <span class="font-mono text-xs sm:text-sm font-bold text-orange-300 tabular-nums whitespace-nowrap block mt-0.5">
+                  -${fmtEur(summary.monthlyExpense[chartInspectMonth])}
+                </span>
+              </div>
+              <div class="bg-stoneInk-700/40 rounded-xl px-1.5 py-2 min-w-0">
+                <span class="text-[10px] font-sans uppercase tracking-wider text-stoneInk-400 block">Acum.</span>
+                <span class="font-mono text-xs sm:text-sm font-extrabold text-white tabular-nums whitespace-nowrap block mt-0.5">
+                  ${fmtEur(cumulativeByMonth[chartInspectMonth])}
+                </span>
+              </div>
             </div>
           </div>
         `
@@ -1544,7 +1573,7 @@
               </div>
               <div class="flex items-center gap-2 font-mono tabular-nums shrink-0">
                 <span class="text-[11px] text-stoneInk-500">${pct}%</span>
-                <strong class="text-stoneInk-900">${fmtEur(sl.value)}</strong>
+                <strong class="text-stoneInk-900 whitespace-nowrap">${fmtEur(sl.value)}</strong>
               </div>
             </div>
           `;
@@ -1558,7 +1587,7 @@
               </svg>
               <div class="absolute inset-0 flex flex-col items-center justify-center text-center px-4">
                 <span class="text-[10px] font-bold uppercase text-stoneInk-400">Total</span>
-                <span class="font-mono text-xs font-extrabold text-stoneInk-900 tabular-nums mt-0.5">${fmtEur(donutTotal)}</span>
+                <span class="font-mono text-xs font-extrabold text-stoneInk-900 tabular-nums whitespace-nowrap mt-0.5">${fmtEur(donutTotal)}</span>
               </div>
             </div>
 
@@ -1573,19 +1602,19 @@
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           <div class="bg-white border border-cream-300 rounded-2xl p-3 shadow-sm">
             <span class="text-[10px] font-bold uppercase text-stoneInk-400 block">Ingresos ${book.year}</span>
-            <span class="font-mono text-sm sm:text-base font-extrabold text-emeraldPro-700 tabular-nums mt-0.5 block">
+            <span class="font-mono text-sm sm:text-base font-extrabold text-emeraldPro-700 tabular-nums whitespace-nowrap mt-0.5 block">
               +${fmtEur(summary.totalIncome)}
             </span>
           </div>
           <div class="bg-white border border-cream-300 rounded-2xl p-3 shadow-sm">
             <span class="text-[10px] font-bold uppercase text-stoneInk-400 block">Gastos ${book.year}</span>
-            <span class="font-mono text-sm sm:text-base font-extrabold text-terra-600 tabular-nums mt-0.5 block">
+            <span class="font-mono text-sm sm:text-base font-extrabold text-terra-600 tabular-nums whitespace-nowrap mt-0.5 block">
               -${fmtEur(summary.totalExpense)}
             </span>
           </div>
           <div class="bg-white border border-cream-300 rounded-2xl p-3 shadow-sm">
             <span class="text-[10px] font-bold uppercase text-stoneInk-400 block">Saldo actual</span>
-            <span class="font-mono text-sm sm:text-base font-extrabold tabular-nums mt-0.5 block ${summary.totalAnnualEnd < -0.005 ? 'text-terra-600' : 'text-emeraldPro-700'}">
+            <span class="font-mono text-sm sm:text-base font-extrabold tabular-nums whitespace-nowrap mt-0.5 block ${summary.totalAnnualEnd < -0.005 ? 'text-terra-600' : 'text-emeraldPro-700'}">
               ${fmtEur(summary.totalAnnualEnd)}
             </span>
           </div>
@@ -3146,7 +3175,7 @@
           MONTHS_FULL[getTxMonth(t)],
           `"${(chMap[t.chapterId] || '').replace(/"/g, '""')}"`,
           t.transferId ? 'Traspaso' : (t.type === 'income' ? 'Ingreso' : 'Gasto'),
-          String(t.amount).replace('.', ','),
+          formatSpanishNumber(t.amount),
           `"${(t.concept || '').replace(/"/g, '""')}"`,
           `"${(t.note || '').replace(/"/g, '""')}"`
         ]);
