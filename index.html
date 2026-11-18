@@ -355,8 +355,8 @@
     const MONTHS_FULL = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
     const DEFAULT_WORKSPACES = [
-      { id: 'personal', name: 'Personal', icon: 'ph-user', color: 'emerald' },
-      { id: 'hogar', name: 'Hogar', icon: 'ph-house-line', color: 'terra' }
+      { id: 'personal', name: 'Personal', icon: 'ph-user', color: 'emerald', closed: false },
+      { id: 'hogar', name: 'Hogar', icon: 'ph-house-line', color: 'terra', closed: false }
     ];
 
     const WORKSPACE_PRESETS = [
@@ -450,18 +450,22 @@
       if (!Array.isArray(st.workspaces) || st.workspaces.length === 0) {
         st.workspaces = DEFAULT_WORKSPACES.map(w => ({ ...w }));
       }
+      st.workspaces.forEach(w => {
+        w.closed = Boolean(w.closed);
+      });
       const existingIds = new Set(st.workspaces.map(w => w.id));
       (st.books || []).forEach(b => {
         if (b.category && !existingIds.has(b.category)) {
           existingIds.add(b.category);
           const preset = DEFAULT_WORKSPACES.find(d => d.id === b.category);
           st.workspaces.push(preset
-            ? { ...preset }
+            ? { ...preset, closed: false }
             : {
                 id: b.category,
                 name: b.category.charAt(0).toUpperCase() + b.category.slice(1),
                 icon: 'ph-folder',
-                color: 'sky'
+                color: 'sky',
+                closed: false
               }
           );
         }
@@ -499,16 +503,27 @@
       return state.workspaces;
     }
 
+    function getSortedWorkspaces() {
+      return [...getWorkspaces()].sort((a, b) => {
+        const aClosed = Boolean(a.closed);
+        const bClosed = Boolean(b.closed);
+        if (aClosed !== bClosed) return aClosed ? 1 : -1;
+        return (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' });
+      });
+    }
+
     function getWorkspaceInfo(catId) {
       return getWorkspaces().find(w => w.id === catId) || {
         id: catId,
         name: catId === 'personal' ? 'Personal' : (catId === 'hogar' ? 'Hogar' : catId),
         icon: catId === 'hogar' ? 'ph-house-line' : 'ph-user',
-        color: catId === 'hogar' ? 'terra' : 'emerald'
+        color: catId === 'hogar' ? 'terra' : 'emerald',
+        closed: false
       };
     }
 
-    function getWorkspaceBgClass(color) {
+    function getWorkspaceBgClass(color, closed = false) {
+      if (closed) return 'bg-stoneInk-400';
       const map = {
         emerald: 'bg-emeraldPro-700',
         terra: 'bg-terra-600',
@@ -546,7 +561,7 @@
         const list = getBooksByCategory(state.activeCategory);
         b = list[0] || state.books[0];
         if (!b) {
-          const ws = getWorkspaces()[0] || DEFAULT_WORKSPACES[0];
+          const ws = getSortedWorkspaces()[0] || DEFAULT_WORKSPACES[0];
           b = {
             id: `${ws.id}_${CURRENT_REAL_YEAR}`,
             category: ws.id,
@@ -562,6 +577,10 @@
       return b;
     }
 
+    /**
+     * Ordena siempre alfabéticamente primero todos los capítulos activos (A-Z)
+     * y después alfabéticamente todos los desactivados (A-Z).
+     */
     function getSortedChapters(chapters) {
       return [...chapters].sort((a, b) => {
         const aClosed = Boolean(a.closed);
@@ -569,6 +588,23 @@
         if (aClosed !== bClosed) return aClosed ? 1 : -1;
         return (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' });
       });
+    }
+
+    /**
+     * Genera las etiquetas <option> para selectores/filtros de capítulos:
+     * primero activos A-Z y luego desactivados A-Z en gris suavecito.
+     */
+    function buildChapterFilterOptionsHtml(chapters, selectedValue, includeAllLabel = 'Todos los capítulos', valueKey = 'id') {
+      const sorted = getSortedChapters(chapters);
+      let html = includeAllLabel ? `<option value="all">${esc(includeAllLabel)}</option>` : '';
+      html += sorted.map(c => {
+        const val = valueKey === 'nameKey' ? (c.name || '').trim().toLowerCase() : c.id;
+        const isClosed = Boolean(c.closed);
+        const styleAttr = isClosed ? 'style="color:#9CA3AF; background-color:#F5F5F4;"' : 'style="color:#1C1917;"';
+        const suffix = isClosed ? ' (Desactivado)' : '';
+        return `<option value="${esc(val)}" ${String(val) === String(selectedValue) ? 'selected' : ''} ${styleAttr}>${esc(c.name)}${suffix}</option>`;
+      }).join('');
+      return html;
     }
 
     function formatYearsSummary(books) {
@@ -586,6 +622,28 @@
       if (y > CURRENT_REAL_YEAR) return true;
       if (y < CURRENT_REAL_YEAR) return false;
       return m >= CURRENT_REAL_MONTH;
+    }
+
+    /**
+     * Comprueba si un capítulo tiene al menos un movimiento (apunte o saldo inicial != 0)
+     */
+    function chapterHasAnyActivity(book, chapterId) {
+      const ch = book.chapters.find(c => c.id === chapterId);
+      if (!ch) return false;
+      const hasInit = Math.abs(Number(ch.initialBalance) || 0) >= 0.005;
+      const hasTxs = book.transactions.some(t => t.chapterId === chapterId);
+      return hasInit || hasTxs;
+    }
+
+    /**
+     * Comprueba si un bloque tiene algún movimiento (capítulo con saldo inicial o apuntes)
+     */
+    function workspaceHasAnyActivity(wsId) {
+      const wsBooks = getBooksByCategory(wsId);
+      return wsBooks.some(b => {
+        if ((b.transactions || []).length > 0) return true;
+        return (b.chapters || []).some(c => Math.abs(Number(c.initialBalance) || 0) >= 0.005);
+      });
     }
 
     // =========================================================================
@@ -710,7 +768,7 @@
     }
 
     // =========================================================================
-    // 4. NAVEGACIÓN Y RENDERIZADO DE CABECERA
+    // 4. NAVEGACIÓN, CAMBIO DE AÑO (CON PRESERVACIÓN DE FILTROS) Y CABECERA
     // =========================================================================
     function switchView(view) {
       currentView = view;
@@ -745,7 +803,7 @@
 
       document.getElementById('headerCategoryLabel').textContent = ws.name;
       const iconBox = document.getElementById('headerCategoryIcon');
-      iconBox.className = `w-8 h-8 rounded-lg text-white flex items-center justify-center shrink-0 ${getWorkspaceBgClass(ws.color)}`;
+      iconBox.className = `w-8 h-8 rounded-lg text-white flex items-center justify-center shrink-0 ${getWorkspaceBgClass(ws.color, ws.closed)}`;
       iconBox.innerHTML = `<i class="ph-bold ${ws.icon} text-base"></i>`;
 
       const catBooks = getBooksByCategory(book.category);
@@ -755,13 +813,62 @@
       `).join('');
     }
 
+    /**
+     * Al cambiar de año dentro del mismo bloque:
+     * Mantiene todos los filtros activos (búsqueda, mes, tipo, capítulo por nombre equivalente).
+     * Si el capítulo filtrado NO existe en el nuevo año, limpia los filtros de esa vista.
+     */
     function selectYearInCategory(bookId) {
+      const oldBook = getActiveBook();
+      const oldChronoCh = oldBook && chronoFilter.chapterId !== 'all'
+        ? oldBook.chapters.find(c => c.id === chronoFilter.chapterId)
+        : null;
+      const oldChartMonthlyCh = oldBook && chartMonthlyChapterFilter !== 'all'
+        ? oldBook.chapters.find(c => c.id === chartMonthlyChapterFilter)
+        : null;
+
       state.activeBookId = bookId;
-      const b = getActiveBook();
-      state.activeCategory = b.category;
-      chronoFilter.chapterId = 'all';
-      chartMonthlyChapterFilter = 'all';
-      chartInspectMonth = null;
+      const newBook = getActiveBook();
+      state.activeCategory = newBook.category;
+
+      // 1. Filtro de Cronológico
+      if (chronoFilter.chapterId !== 'all') {
+        if (oldChronoCh) {
+          const match = newBook.chapters.find(
+            c => (c.name || '').trim().toLowerCase() === (oldChronoCh.name || '').trim().toLowerCase()
+          );
+          if (match) {
+            chronoFilter.chapterId = match.id;
+          } else {
+            chronoFilter = { search: '', chapterId: 'all', month: 'all', type: 'all' };
+            const searchEl = document.getElementById('chronoSearchInput');
+            if (searchEl) searchEl.value = '';
+          }
+        } else {
+          chronoFilter = { search: '', chapterId: 'all', month: 'all', type: 'all' };
+          const searchEl = document.getElementById('chronoSearchInput');
+          if (searchEl) searchEl.value = '';
+        }
+      }
+
+      // 2. Filtro de Gráfico Evolución Mensual
+      if (chartMonthlyChapterFilter !== 'all') {
+        if (oldChartMonthlyCh) {
+          const match = newBook.chapters.find(
+            c => (c.name || '').trim().toLowerCase() === (oldChartMonthlyCh.name || '').trim().toLowerCase()
+          );
+          if (match) {
+            chartMonthlyChapterFilter = match.id;
+          } else {
+            chartMonthlyChapterFilter = 'all';
+            chartInspectMonth = null;
+          }
+        } else {
+          chartMonthlyChapterFilter = 'all';
+          chartInspectMonth = null;
+        }
+      }
+
       saveState();
       renderAll();
     }
@@ -830,15 +937,8 @@
         ? 'Saldo disponible'
         : `Acum. cierre ${monthShort}`;
 
-      const visibleChapters = applyChapterSort(
-        chapters.filter(ch => {
-          if (!ch.closed) return true;
-          if (typeof ch.closedMonth === 'number') {
-            return selectedMonth <= ch.closedMonth;
-          }
-          return true;
-        })
-      );
+      // Mostramos todos los capítulos: los activos arriba y los desactivados abajo en gris suave
+      const visibleChapters = applyChapterSort(chapters);
 
       const emptyStateHtml = `
         <div class="bg-white border border-cream-300 rounded-3xl p-8 text-center shadow-sm">
@@ -867,24 +967,24 @@
               return `
                 <div onclick="openChapterModal('${ch.id}')"
                   class="${isClosed
-                    ? 'bg-cream-200/70 border-stoneInk-400/40 opacity-75'
+                    ? 'bg-cream-200/75 border-stoneInk-400/40 opacity-75'
                     : 'bg-white hover:bg-cream-50 border-cream-300 shadow-sm'
                   } active:scale-[0.99] transition-all border rounded-2xl p-4 cursor-pointer">
                   <div class="flex items-start justify-between gap-2">
                     <div class="min-w-0">
                       <div class="flex items-center gap-1.5 flex-wrap">
-                        <h3 class="font-extrabold text-base ${isClosed ? 'text-stoneInk-600 line-through' : 'text-stoneInk-900'} truncate">
+                        <h3 class="font-extrabold text-base ${isClosed ? 'text-stoneInk-500 line-through' : 'text-stoneInk-900'} truncate">
                           ${esc(ch.name)}
                         </h3>
                         ${isClosed ? `
-                          <span class="text-[10px] font-extrabold uppercase tracking-wider bg-stoneInk-700 text-white px-2 py-0.5 rounded-md">
-                            Eliminado · ${fmtDateShort(ch.closedDate)}
+                          <span class="text-[10px] font-extrabold uppercase tracking-wider bg-stoneInk-500 text-white px-2 py-0.5 rounded-md">
+                            Desactivado${ch.closedDate ? ' · ' + fmtDateShort(ch.closedDate) : ''}
                           </span>
                         ` : ''}
                       </div>
                       <span class="inline-flex items-center gap-1 mt-1 text-[11px] font-semibold text-stoneInk-500 bg-cream-200/80 px-2 py-0.5 rounded-md">
                         ${isClosed
-                          ? 'Capítulo cerrado'
+                          ? 'Capítulo desactivado'
                           : `Cuota: <strong class="font-mono text-stoneInk-700">${fmtEur(ch.quota)}</strong>/mes`
                         }
                       </span>
@@ -893,7 +993,7 @@
                     <div class="text-right shrink-0">
                       <span class="text-[10px] font-bold uppercase tracking-wider text-stoneInk-400 block whitespace-nowrap">${cardKpiLabel}</span>
                       <span class="font-mono text-xl font-extrabold tabular-nums whitespace-nowrap ${
-                        isClosed ? 'text-stoneInk-600' : (isNeg ? 'text-terra-600' : 'text-emeraldPro-700')
+                        isClosed ? 'text-stoneInk-500' : (isNeg ? 'text-terra-600' : 'text-emeraldPro-700')
                       }">
                         ${fmtEur(ch.balanceAtMonthEnd)}
                       </span>
@@ -909,13 +1009,13 @@
                     </div>
                     <div class="${isClosed ? 'bg-cream-100' : 'bg-emeraldPro-50'} rounded-xl p-2">
                       <span class="text-[10px] font-semibold ${isClosed ? 'text-stoneInk-500' : 'text-emeraldPro-700'} block truncate">Ingresado ${monthShort}</span>
-                      <span class="font-mono text-xs font-bold tabular-nums whitespace-nowrap ${isClosed ? 'text-stoneInk-600' : 'text-emeraldPro-700'}">
+                      <span class="font-mono text-xs font-bold tabular-nums whitespace-nowrap ${isClosed ? 'text-stoneInk-500' : 'text-emeraldPro-700'}">
                         +${fmtEur(ch.monthIncome)}
                       </span>
                     </div>
                     <div class="${isClosed ? 'bg-cream-100' : 'bg-terra-50'} rounded-xl p-2">
                       <span class="text-[10px] font-semibold ${isClosed ? 'text-stoneInk-500' : 'text-terra-600'} block truncate">Gastado ${monthShort}</span>
-                      <span class="font-mono text-xs font-bold tabular-nums whitespace-nowrap ${isClosed ? 'text-stoneInk-600' : 'text-terra-600'}">
+                      <span class="font-mono text-xs font-bold tabular-nums whitespace-nowrap ${isClosed ? 'text-stoneInk-500' : 'text-terra-600'}">
                         -${fmtEur(ch.monthExpense)}
                       </span>
                     </div>
@@ -926,6 +1026,15 @@
           </div>`;
 
       document.getElementById('view-chapters').innerHTML = `
+        ${ws.closed ? `
+          <div class="bg-cream-200 border border-stoneInk-400/40 rounded-2xl p-3 mb-3 flex items-center justify-between gap-2 text-xs text-stoneInk-700">
+            <span class="font-semibold">Este bloque (<strong>${esc(ws.name)}</strong>) está desactivado.</span>
+            <button onclick="reactivateWorkspace('${ws.id}')" class="px-3 py-1.5 rounded-xl bg-emeraldPro-700 text-white font-extrabold text-[11px] shrink-0">
+              Reactivar bloque
+            </button>
+          </div>
+        ` : ''}
+
         <!-- KPI Superior -->
         <div class="bg-stoneInk-900 text-cream-50 rounded-3xl p-4 shadow-md mb-4">
           <div class="flex items-center justify-between gap-2 pb-3 border-b border-stoneInk-700">
@@ -1066,7 +1175,7 @@
                 afterClosure
                   ? 'bg-cream-200/50 text-stoneInk-400'
                   : hasInc
-                    ? (isClosed ? 'font-bold text-stoneInk-600 bg-cream-200/40' : 'font-bold text-emeraldPro-700 bg-emeraldPro-50/40 hover:bg-emeraldPro-100/70')
+                    ? (isClosed ? 'font-bold text-stoneInk-500 bg-cream-200/40' : 'font-bold text-emeraldPro-700 bg-emeraldPro-50/40 hover:bg-emeraldPro-100/70')
                     : 'text-stoneInk-400 hover:bg-cream-100'
               }">
               ${fmtCell(mData.income)}
@@ -1076,7 +1185,7 @@
                 afterClosure
                   ? 'bg-cream-200/50 text-stoneInk-400'
                   : hasExp
-                    ? (isClosed ? 'font-bold text-stoneInk-600 bg-cream-200/40' : 'font-bold text-stoneInk-900 bg-terra-50/40 hover:bg-terra-100/70')
+                    ? (isClosed ? 'font-bold text-stoneInk-500 bg-cream-200/40' : 'font-bold text-stoneInk-900 bg-terra-50/40 hover:bg-terra-100/70')
                     : 'text-stoneInk-400 hover:bg-cream-100'
               }">
               ${fmtCell(mData.expense)}
@@ -1091,11 +1200,11 @@
               style="${isClosed ? 'background-color:#EFECE4;' : ''}"
               class="sticky-col-1 px-3 py-3 text-xs font-extrabold ${isClosed ? 'text-stoneInk-500' : 'text-stoneInk-900'} truncate border-r border-cream-200 cursor-pointer">
               <span class="${isClosed ? 'line-through' : ''}">${esc(ch.name)}</span>
-              ${isClosed ? `<span class="block text-[9px] font-bold uppercase text-stoneInk-500 no-underline">Cerrado</span>` : ''}
+              ${isClosed ? `<span class="block text-[9px] font-bold uppercase text-stoneInk-500 no-underline">Desactivado</span>` : ''}
             </td>
             <td style="${isClosed ? 'background-color:#EFECE4;' : ''}"
               class="sticky-col-2 px-2.5 py-3 text-right font-mono text-xs font-extrabold tabular-nums whitespace-nowrap ${
-                isClosed ? 'text-stoneInk-600' : (isNeg ? 'text-terra-600' : 'text-emeraldPro-700')
+                isClosed ? 'text-stoneInk-500' : (isNeg ? 'text-terra-600' : 'text-emeraldPro-700')
               }">
               ${fmtEur(ch.annualEndBalance)}
             </td>
@@ -1212,15 +1321,14 @@
 
     function renderChronoDropdowns() {
       const book = getActiveBook();
-      const sortedChs = getSortedChapters(book.chapters);
       const chSelect = document.getElementById('chronoChapterSelect');
-      chSelect.innerHTML = `<option value="all">Todos cap.</option>` +
-        sortedChs.map(c => `<option value="${c.id}">${esc(c.name)}${c.closed ? ' (Cerrado)' : ''}</option>`).join('');
 
-      if (!book.chapters.some(c => c.id === chronoFilter.chapterId)) {
-        chronoFilter.chapterId = 'all';
+      if (chronoFilter.chapterId !== 'all' && !book.chapters.some(c => c.id === chronoFilter.chapterId)) {
+        chronoFilter = { search: '', chapterId: 'all', month: 'all', type: 'all' };
+        document.getElementById('chronoSearchInput').value = '';
       }
-      chSelect.value = chronoFilter.chapterId;
+
+      chSelect.innerHTML = buildChapterFilterOptionsHtml(book.chapters, chronoFilter.chapterId, 'Todos cap.', 'id');
       document.getElementById('chronoMonthSelect').value = chronoFilter.month;
       document.getElementById('chronoTypeSelect').value = chronoFilter.type;
     }
@@ -1343,8 +1451,8 @@
                 <p class="text-sm font-bold text-stoneInk-900 truncate">${esc(tx.concept)}</p>
                 ${tx.note ? `<p class="text-xs text-stoneInk-500 truncate">${esc(tx.note)}</p>` : ''}
                 <div class="flex items-center gap-2 mt-1">
-                  <span class="text-[10px] font-extrabold bg-cream-200 text-stoneInk-700 px-2 py-0.5 rounded-md">
-                    ${esc(ch.name)}${ch.closed ? ' · Cerrado' : ''}
+                  <span class="text-[10px] font-extrabold ${ch.closed ? 'bg-cream-200/70 text-stoneInk-400' : 'bg-cream-200 text-stoneInk-700'} px-2 py-0.5 rounded-md">
+                    ${esc(ch.name)}${ch.closed ? ' · Desactivado' : ''}
                   </span>
                   <span class="text-[11px] font-medium text-stoneInk-400">${fmtDateShort(tx.date)}</span>
                 </div>
@@ -1362,16 +1470,30 @@
     }
 
     // =========================================================================
-    // 7B. VISTA 4: GRÁFICOS ANALÍTICOS (MENSUAL + ANUAL CON FILTRO CAPÍTULOS)
+    // 7B. VISTA 4: GRÁFICOS ANALÍTICOS (MENSUAL + ANUAL CON FILTRO Y LIMPIAR)
     // =========================================================================
     function setChartMonthlyChapterFilter(val) {
       chartMonthlyChapterFilter = val;
       renderChartsView();
     }
 
+    function clearChartMonthlyFilter() {
+      chartMonthlyChapterFilter = 'all';
+      chartInspectMonth = null;
+      renderChartsView();
+      showToast('Filtro mensual limpiado');
+    }
+
     function setChartAnnualChapterFilter(val) {
       chartAnnualChapterFilter = val;
       renderChartsView();
+    }
+
+    function clearChartAnnualFilter() {
+      chartAnnualChapterFilter = 'all';
+      chartInspectYear = null;
+      renderChartsView();
+      showToast('Filtro anual limpiado');
     }
 
     function setChartDonutMode(mode) {
@@ -1395,10 +1517,6 @@
       renderChartsView();
     }
 
-    /**
-     * Genera un gráfico combinado SVG (barras de ingresos/gastos + línea de acumulado)
-     * reutilizable tanto para los 12 meses como para la serie histórica de años.
-     */
     function buildComboChartSVG({ labels, incomes, expenses, cumulatives, inspectedIndex, onSelectCallbackName }) {
       const n = Math.max(labels.length, 1);
       const allVals = [...incomes, ...expenses, ...cumulatives, 0];
@@ -1531,9 +1649,9 @@
         return;
       }
 
-      // Validar que el capítulo filtrado en mensual siga existiendo en el libro activo
       if (chartMonthlyChapterFilter !== 'all' && !chapters.some(c => c.id === chartMonthlyChapterFilter)) {
         chartMonthlyChapterFilter = 'all';
+        chartInspectMonth = null;
       }
 
       let peakMonthIdx = 0;
@@ -1545,7 +1663,7 @@
         }
       });
 
-      // --- DATOS GRÁFICO 1: EVOLUCIÓN MENSUAL (FILTRABLE POR CAPÍTULO) ---
+      // --- DATOS GRÁFICO 1: EVOLUCIÓN MENSUAL ---
       let mInitial = summary.totalInitial;
       let mIncomes = summary.monthlyIncome;
       let mExpenses = summary.monthlyExpense;
@@ -1588,27 +1706,41 @@
           </p>
         `;
 
-      // --- DATOS GRÁFICO 2: EVOLUCIÓN ANUAL HISTÓRICA (FILTRABLE POR CAPÍTULO) ---
+      // --- DATOS GRÁFICO 2: EVOLUCIÓN ANUAL HISTÓRICA ---
       const categoryBooksAsc = getBooksByCategory(book.category)
         .filter(b => b.year <= CURRENT_REAL_YEAR)
         .sort((a, b) => a.year - b.year);
 
-      // Recopilar todos los nombres únicos de capítulos en todo el histórico del bloque
-      const allChapterNamesMap = new Map();
+      // Mapear capítulos históricos indicando si están activos en el último año en que aparecen (o en el libro actual)
+      const allChaptersByKey = new Map();
       categoryBooksAsc.forEach(b => {
         (b.chapters || []).forEach(c => {
           const cleanName = (c.name || '').trim();
           const key = cleanName.toLowerCase();
-          if (cleanName && !allChapterNamesMap.has(key)) {
-            allChapterNamesMap.set(key, cleanName);
+          if (cleanName) {
+            allChaptersByKey.set(key, {
+              name: cleanName,
+              closed: Boolean(c.closed)
+            });
           }
         });
       });
-      const annualChapterOptions = Array.from(allChapterNamesMap.entries())
-        .sort((a, b) => a[1].localeCompare(b[1], 'es', { sensitivity: 'base' }));
+      // Si el libro activo actual tiene el capítulo, prevalece su estado activo/desactivado actual
+      (book.chapters || []).forEach(c => {
+        const cleanName = (c.name || '').trim();
+        const key = cleanName.toLowerCase();
+        if (cleanName && allChaptersByKey.has(key)) {
+          allChaptersByKey.set(key, {
+            name: cleanName,
+            closed: Boolean(c.closed)
+          });
+        }
+      });
 
-      if (chartAnnualChapterFilter !== 'all' && !allChapterNamesMap.has(chartAnnualChapterFilter)) {
+      const annualPseudoChapters = Array.from(allChaptersByKey.values());
+      if (chartAnnualChapterFilter !== 'all' && !allChaptersByKey.has(chartAnnualChapterFilter)) {
         chartAnnualChapterFilter = 'all';
+        chartInspectYear = null;
       }
 
       const annualYearsLabels = categoryBooksAsc.map(b => String(b.year));
@@ -1774,7 +1906,7 @@
           </div>
         </div>
 
-        <!-- Gráfico 1: Evolución Mensual con filtro por capítulo -->
+        <!-- Gráfico 1: Evolución Mensual con filtro por capítulo y botón limpiar -->
         <div class="bg-white border border-cream-300 rounded-2xl p-4 shadow-sm space-y-3">
           <div class="flex flex-wrap items-start justify-between gap-2">
             <div>
@@ -1782,15 +1914,19 @@
               <p class="text-[11px] text-stoneInk-500">Ingresos y gastos por mes frente al saldo acumulado</p>
             </div>
 
-            <div class="relative shrink-0">
-              <select onchange="setChartMonthlyChapterFilter(this.value)" aria-label="Filtrar evolución mensual por capítulo"
-                class="appearance-none bg-cream-100 border border-cream-300 rounded-xl pl-2.5 pr-7 py-1.5 text-[11px] font-extrabold text-stoneInk-800 focus:outline-none cursor-pointer">
-                <option value="all" ${chartMonthlyChapterFilter === 'all' ? 'selected' : ''}>Todos los capítulos</option>
-                ${chapters.map(c => `
-                  <option value="${c.id}" ${chartMonthlyChapterFilter === c.id ? 'selected' : ''}>${esc(c.name)}</option>
-                `).join('')}
-              </select>
-              <i class="ph-bold ph-caret-down text-[10px] text-stoneInk-500 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2"></i>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <div class="relative">
+                <select onchange="setChartMonthlyChapterFilter(this.value)" aria-label="Filtrar evolución mensual por capítulo"
+                  class="appearance-none bg-cream-100 border border-cream-300 rounded-xl pl-2.5 pr-7 py-1.5 text-[11px] font-extrabold text-stoneInk-800 focus:outline-none cursor-pointer max-w-[165px] truncate">
+                  ${buildChapterFilterOptionsHtml(chapters, chartMonthlyChapterFilter, 'Todos los capítulos', 'id')}
+                </select>
+                <i class="ph-bold ph-caret-down text-[10px] text-stoneInk-500 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2"></i>
+              </div>
+
+              <button onclick="clearChartMonthlyFilter()" title="Limpiar filtro mensual"
+                class="bg-terra-50 hover:bg-terra-100 text-terra-600 border border-terra-600/20 rounded-xl p-1.5 flex items-center justify-center transition-all active:scale-95">
+                <i class="ph-bold ph-broom text-sm"></i>
+              </button>
             </div>
           </div>
 
@@ -1813,7 +1949,7 @@
           ${inspectedMonthBannerHtml}
         </div>
 
-        <!-- Gráfico 2: Evolución Anual Histórica con filtro por capítulo -->
+        <!-- Gráfico 2: Evolución Anual Histórica con filtro por capítulo y botón limpiar -->
         <div class="bg-white border border-cream-300 rounded-2xl p-4 shadow-sm space-y-3">
           <div class="flex flex-wrap items-start justify-between gap-2">
             <div>
@@ -1821,15 +1957,19 @@
               <p class="text-[11px] text-stoneInk-500">Ingresos y gastos anuales frente al saldo acumulado</p>
             </div>
 
-            <div class="relative shrink-0">
-              <select onchange="setChartAnnualChapterFilter(this.value)" aria-label="Filtrar evolución anual por capítulo"
-                class="appearance-none bg-cream-100 border border-cream-300 rounded-xl pl-2.5 pr-7 py-1.5 text-[11px] font-extrabold text-stoneInk-800 focus:outline-none cursor-pointer">
-                <option value="all" ${chartAnnualChapterFilter === 'all' ? 'selected' : ''}>Todos los capítulos</option>
-                ${annualChapterOptions.map(([key, label]) => `
-                  <option value="${esc(key)}" ${chartAnnualChapterFilter === key ? 'selected' : ''}>${esc(label)}</option>
-                `).join('')}
-              </select>
-              <i class="ph-bold ph-caret-down text-[10px] text-stoneInk-500 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2"></i>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <div class="relative">
+                <select onchange="setChartAnnualChapterFilter(this.value)" aria-label="Filtrar evolución anual por capítulo"
+                  class="appearance-none bg-cream-100 border border-cream-300 rounded-xl pl-2.5 pr-7 py-1.5 text-[11px] font-extrabold text-stoneInk-800 focus:outline-none cursor-pointer max-w-[165px] truncate">
+                  ${buildChapterFilterOptionsHtml(annualPseudoChapters, chartAnnualChapterFilter, 'Todos los capítulos', 'nameKey')}
+                </select>
+                <i class="ph-bold ph-caret-down text-[10px] text-stoneInk-500 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2"></i>
+              </div>
+
+              <button onclick="clearChartAnnualFilter()" title="Limpiar filtro anual"
+                class="bg-terra-50 hover:bg-terra-100 text-terra-600 border border-terra-600/20 rounded-xl p-1.5 flex items-center justify-center transition-all active:scale-95">
+                <i class="ph-bold ph-broom text-sm"></i>
+              </button>
             </div>
           </div>
 
@@ -1889,7 +2029,7 @@
     }
 
     // =========================================================================
-    // 8. MODALES (REPARTO SUELDO, APUNTES, CAPÍTULOS, BLOQUES DINÁMICOS, AJUSTES)
+    // 8. MODALES (REPARTO SUELDO, APUNTES, CAPÍTULOS, BLOQUES, AJUSTES)
     // =========================================================================
     function openModal(html) {
       document.getElementById('modalSlot').innerHTML = `
@@ -1904,7 +2044,7 @@
       document.getElementById('modalOverlay').classList.add('hidden');
     }
 
-    // --- A. MODAL REPARTIR SUELDO (FECHA POR DEFECTO = HOY) ---
+    // --- A. MODAL REPARTIR SUELDO ---
     function openSalarySplitModal() {
       const book = getActiveBook();
       const activeChapters = getSortedChapters(book.chapters).filter(c => !c.closed);
@@ -2156,7 +2296,7 @@
       showToast(`Sueldo repartido en ${added} capítulos`);
     }
 
-    // --- B. MODAL NUEVO / EDITAR APUNTE (FECHA POR DEFECTO = HOY SIEMPRE) ---
+    // --- B. MODAL NUEVO / EDITAR APUNTE (FECHA = HOY + CREACIÓN AUTOMÁTICA DE AÑO FUTURO) ---
     function openTxModal(txId = null, defaultChapterId = null, defaultMonthIdx = null, defaultType = 'expense') {
       const book = getActiveBook();
       const { chapters } = analyzeBook(book, selectedMonth);
@@ -2168,7 +2308,6 @@
         return;
       }
 
-      // Para apuntes nuevos, siempre preselecciona el día real actual (hoy)
       const defaultDate = existing ? existing.date : getTodayISO();
 
       let initialMode = defaultType;
@@ -2314,9 +2453,72 @@
       }
     }
 
+    /**
+     * Obtiene o crea automáticamente el libro del año indicado por la fecha del apunte
+     * dentro del bloque activo, heredando los capítulos activos si el año aún no existía.
+     */
+    function ensureBookForYearInCategory(cat, targetYear) {
+      let targetBook = state.books.find(b => b.category === cat && Number(b.year) === Number(targetYear));
+      if (targetBook) return { book: targetBook, created: false };
+
+      const catBooks = getBooksByCategory(cat);
+      const prevBooks = catBooks.filter(b => Number(b.year) < Number(targetYear));
+      const srcBook = prevBooks[0] || catBooks[0] || null;
+
+      let inheritedChapters = [];
+      if (srcBook) {
+        const { chapters: analyzed } = analyzeBook(srcBook, 11);
+        inheritedChapters = analyzed
+          .filter(c => !c.closed)
+          .map((c, idx) => ({
+            id: `ch_${cat}_${targetYear}_${Date.now()}_${idx}`,
+            name: c.name,
+            initialBalance: c.annualEndBalance,
+            quota: c.quota,
+            closed: false,
+            closedDate: null,
+            closedMonth: null
+          }));
+      }
+
+      const newId = `${cat}_${targetYear}_${Date.now()}`;
+      targetBook = {
+        id: newId,
+        category: cat,
+        year: Number(targetYear),
+        chapters: inheritedChapters,
+        transactions: []
+      };
+      state.books.push(targetBook);
+      return { book: targetBook, created: true };
+    }
+
+    function resolveChapterInTargetBook(sourceBook, sourceChapterId, targetBook) {
+      if (sourceBook.id === targetBook.id) return sourceChapterId;
+      const srcCh = sourceBook.chapters.find(c => c.id === sourceChapterId);
+      if (!srcCh) return sourceChapterId;
+
+      let match = targetBook.chapters.find(
+        c => (c.name || '').trim().toLowerCase() === (srcCh.name || '').trim().toLowerCase()
+      );
+      if (!match) {
+        match = {
+          id: `ch_${targetBook.category}_${targetBook.year}_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+          name: srcCh.name,
+          initialBalance: 0,
+          quota: Number(srcCh.quota) || 0,
+          closed: false,
+          closedDate: null,
+          closedMonth: null
+        };
+        targetBook.chapters.push(match);
+      }
+      return match.id;
+    }
+
     function saveTransaction(e, txId) {
       e.preventDefault();
-      const book = getActiveBook();
+      const activeBook = getActiveBook();
       const mode = document.querySelector('input[name="txMode"]:checked').value;
       const amount = parseFloat(document.getElementById('txAmount').value);
       const date = document.getElementById('txDate').value;
@@ -2344,30 +2546,37 @@
         }
       }
 
+      const txYear = date && date.length >= 4 ? parseInt(date.split('-')[0], 10) : activeBook.year;
       const monthIdx = date && date.length >= 7
         ? Math.max(0, Math.min(11, parseInt(date.split('-')[1], 10) - 1))
         : selectedMonth;
 
+      // Si estábamos editando un apunte existente, lo retiramos primero del libro activo
       if (txId) {
-        const prev = book.transactions.find(t => t.id === txId);
+        const prev = activeBook.transactions.find(t => t.id === txId);
         if (prev && prev.transferId) {
-          book.transactions = book.transactions.filter(t => t.transferId !== prev.transferId);
+          activeBook.transactions = activeBook.transactions.filter(t => t.transferId !== prev.transferId);
         } else {
-          book.transactions = book.transactions.filter(t => t.id !== txId);
+          activeBook.transactions = activeBook.transactions.filter(t => t.id !== txId);
         }
       }
 
+      // Si la fecha pertenece a otro año (por ejemplo, año siguiente aún no creado), crea ese año y guarda el apunte allí como movimiento
+      const { book: destinationBook, created: wasYearCreated } = ensureBookForYearInCategory(activeBook.category, txYear);
+      const resolvedFromChId = resolveChapterInTargetBook(activeBook, chapterId, destinationBook);
+
       if (mode === 'transfer') {
-        const fromCh = book.chapters.find(c => c.id === chapterId);
-        const toCh = book.chapters.find(c => c.id === destChapterId);
+        const resolvedToChId = resolveChapterInTargetBook(activeBook, destChapterId, destinationBook);
+        const fromCh = destinationBook.chapters.find(c => c.id === resolvedFromChId);
+        const toCh = destinationBook.chapters.find(c => c.id === resolvedToChId);
         const trId = 'tr_' + Date.now();
         const absAmt = Number(Math.abs(amount).toFixed(2));
 
-        book.transactions.push({
+        destinationBook.transactions.push({
           id: `${trId}_out`,
           transferId: trId,
           type: 'expense',
-          chapterId,
+          chapterId: resolvedFromChId,
           amount: absAmt,
           concept: `Traspaso a ${toCh ? toCh.name : 'destino'}: ${concept}`,
           note,
@@ -2375,12 +2584,12 @@
           month: monthIdx
         });
 
-        book.transactions.push({
+        destinationBook.transactions.push({
           id: `${trId}_in`,
           transferId: trId,
           type: 'income',
           source: 'transfer',
-          chapterId: destChapterId,
+          chapterId: resolvedToChId,
           amount: absAmt,
           concept: `Traspaso desde ${fromCh ? fromCh.name : 'origen'}: ${concept}`,
           note,
@@ -2388,11 +2597,11 @@
           month: monthIdx
         });
       } else {
-        book.transactions.push({
+        destinationBook.transactions.push({
           id: txId || ('tx_' + Date.now()),
           type: mode,
           source: mode === 'income' ? 'extra' : undefined,
-          chapterId,
+          chapterId: resolvedFromChId,
           amount: Number(amount.toFixed(2)),
           concept,
           note,
@@ -2404,15 +2613,22 @@
       saveState();
       closeModal();
       renderAll();
-      showToast(
-        txId
-          ? 'Apunte actualizado'
-          : mode === 'transfer'
-            ? 'Traspaso realizado entre capítulos'
-            : mode === 'income'
-              ? 'Ingreso guardado'
-              : 'Gasto guardado'
-      );
+
+      if (wasYearCreated) {
+        showToast(`Año ${txYear} creado y apunte guardado como movimiento`);
+      } else if (txYear !== activeBook.year) {
+        showToast(`Apunte guardado en el libro de ${txYear}`);
+      } else {
+        showToast(
+          txId
+            ? 'Apunte actualizado'
+            : mode === 'transfer'
+              ? 'Traspaso realizado entre capítulos'
+              : mode === 'income'
+                ? 'Ingreso guardado'
+                : 'Gasto guardado'
+        );
+      }
     }
 
     function deleteTransaction(txId) {
@@ -2429,7 +2645,7 @@
       showToast('Apunte eliminado');
     }
 
-    // --- E. MODAL DETALLE Y ELIMINACIÓN DE CAPÍTULO ---
+    // --- E. MODAL DETALLE, DESACTIVACIÓN, REACTIVACIÓN Y BORRADO PERMANENTE DE CAPÍTULO ---
     function openChapterModal(chapterId) {
       const book = getActiveBook();
       const { chapters } = analyzeBook(book, selectedMonth);
@@ -2445,7 +2661,7 @@
           <div>
             <div class="flex items-center gap-2">
               <h3 class="font-extrabold text-base text-stoneInk-900">${esc(ch.name)}</h3>
-              ${ch.closed ? `<span class="text-[10px] font-extrabold bg-stoneInk-700 text-white px-2 py-0.5 rounded-md">Cerrado el ${fmtDateShort(ch.closedDate)}</span>` : ''}
+              ${ch.closed ? `<span class="text-[10px] font-extrabold bg-stoneInk-600 text-white px-2 py-0.5 rounded-md">Desactivado${ch.closedDate ? ' · ' + fmtDateShort(ch.closedDate) : ''}</span>` : ''}
             </div>
             <span class="text-[11px] font-mono font-bold ${ch.annualEndBalance < -0.005 ? 'text-terra-600' : 'text-emeraldPro-700'}">
               Saldo acumulado cierre año: ${fmtEur(ch.annualEndBalance)}
@@ -2458,8 +2674,15 @@
 
         <div class="p-5 overflow-y-auto space-y-4">
           ${ch.closed ? `
-            <div class="bg-cream-200 border border-cream-300 rounded-2xl p-3 text-xs text-stoneInk-700">
-              Este capítulo fue cerrado y eliminado el <strong>${ch.closedDate}</strong>. Sus datos históricos siguen visibles hasta su fecha de cierre.
+            <div class="bg-cream-200 border border-cream-300 rounded-2xl p-3.5 space-y-3">
+              <p class="text-xs text-stoneInk-700 leading-relaxed">
+                Este capítulo está <strong>desactivado</strong>${ch.closedDate ? ` desde el <strong>${ch.closedDate}</strong>` : ''}. Conserva todo su historial y puedes volver a reactivarlo cuando lo necesites.
+              </p>
+              <button type="button" onclick="reactivateChapter('${ch.id}')"
+                class="w-full py-2.5 px-4 rounded-xl bg-emeraldPro-700 hover:bg-emeraldPro-600 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm">
+                <i class="ph-bold ph-arrow-counter-clockwise text-sm"></i>
+                <span>Reactivar capítulo</span>
+              </button>
             </div>
           ` : `
             <form onsubmit="updateChapterConfig(event, '${ch.id}')" class="bg-white border border-cream-300 rounded-2xl p-3.5 space-y-3">
@@ -2498,7 +2721,7 @@
                 </button>
               ` : ''}
             </div>
-            <div class="space-y-1.5 max-h-52 overflow-y-auto">
+            <div class="space-y-1.5 max-h-48 overflow-y-auto">
               ${txs.length === 0
                 ? `<p class="text-xs text-stoneInk-400 text-center py-4 bg-white rounded-xl border border-cream-200">Sin movimientos registrados</p>`
                 : txs.map(t => `
@@ -2517,72 +2740,66 @@
             </div>
           </div>
 
-          ${!ch.closed ? `
-            <div class="pt-3 border-t border-cream-300">
-              <button type="button" onclick="initiateDeleteChapter('${ch.id}')"
-                class="w-full py-3 px-4 rounded-2xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-extrabold text-xs flex items-center justify-center gap-2 transition-colors">
-                <i class="ph-bold ph-trash text-base"></i>
-                <span>Eliminar capítulo</span>
+          <div class="pt-3 border-t border-cream-300 space-y-2">
+            ${!ch.closed ? `
+              <button type="button" onclick="initiateDeactivateChapter('${ch.id}')"
+                class="w-full py-3 px-4 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-300/60 text-amber-900 font-extrabold text-xs flex items-center justify-center gap-2 transition-colors">
+                <i class="ph-bold ph-prohibit text-base"></i>
+                <span>Desactivar capítulo</span>
               </button>
-            </div>
-          ` : ''}
+            ` : ''}
+
+            <button type="button" onclick="initiatePermanentDeleteChapter('${ch.id}')"
+              class="w-full py-3 px-4 rounded-2xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-extrabold text-xs flex items-center justify-center gap-2 transition-colors">
+              <i class="ph-bold ph-trash text-base"></i>
+              <span>Borrar capítulo permanentemente</span>
+            </button>
+          </div>
         </div>
       `);
     }
 
-    function initiateDeleteChapter(chapterId) {
+    function reactivateChapter(chapterId) {
+      const book = getActiveBook();
+      const ch = book.chapters.find(c => c.id === chapterId);
+      if (!ch) return;
+      ch.closed = false;
+      ch.closedDate = null;
+      ch.closedMonth = null;
+      saveState();
+      closeModal();
+      renderAll();
+      showToast(`Capítulo "${ch.name}" reactivado`);
+    }
+
+    /**
+     * Desactivar capítulo (mantiene el flujo de traspaso obligatorio si tiene saldo distinto de 0)
+     */
+    function initiateDeactivateChapter(chapterId) {
       const book = getActiveBook();
       const { chapters } = analyzeBook(book, 11);
       const ch = chapters.find(c => c.id === chapterId);
       if (!ch) return;
 
-      const chTxs = book.transactions.filter(t => t.chapterId === chapterId);
       const otherActiveChapters = chapters.filter(c => c.id !== chapterId && !c.closed);
       const hasBalance = Math.abs(ch.annualEndBalance) >= 0.005;
       const defaultDate = getTodayISO();
 
-      if (!hasBalance && chTxs.length === 0) {
+      if (!hasBalance) {
         openModal(`
           <div class="px-5 pt-4 pb-3 border-b border-cream-200 flex items-center justify-between bg-white">
-            <h3 class="font-extrabold text-base text-stoneInk-900">Eliminar capítulo vacío</h3>
+            <h3 class="font-extrabold text-base text-stoneInk-900">Desactivar capítulo</h3>
             <button onclick="openChapterModal('${ch.id}')" class="w-8 h-8 rounded-full bg-cream-200 flex items-center justify-center text-stoneInk-700">
               <i class="ph-bold ph-x"></i>
             </button>
           </div>
-          <div class="p-5 space-y-4">
+          <form onsubmit="confirmDeactivateZeroChapter(event, '${ch.id}')" class="p-5 space-y-4">
             <p class="text-xs text-stoneInk-700 leading-relaxed">
-              El capítulo <strong>"${esc(ch.name)}"</strong> tiene saldo <strong>0,00 €</strong> y ningún apunte. ¿Confirmas su eliminación?
-            </p>
-            <div class="flex gap-2">
-              <button type="button" onclick="openChapterModal('${ch.id}')"
-                class="flex-1 py-3 rounded-2xl bg-cream-200 text-stoneInk-800 font-extrabold text-xs">
-                Cancelar
-              </button>
-              <button type="button" onclick="confirmDirectDeleteEmptyChapter('${ch.id}')"
-                class="flex-1 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs">
-                Eliminar
-              </button>
-            </div>
-          </div>
-        `);
-        return;
-      }
-
-      if (!hasBalance && chTxs.length > 0) {
-        openModal(`
-          <div class="px-5 pt-4 pb-3 border-b border-cream-200 flex items-center justify-between bg-white">
-            <h3 class="font-extrabold text-base text-stoneInk-900">Cerrar y eliminar capítulo</h3>
-            <button onclick="openChapterModal('${ch.id}')" class="w-8 h-8 rounded-full bg-cream-200 flex items-center justify-center text-stoneInk-700">
-              <i class="ph-bold ph-x"></i>
-            </button>
-          </div>
-          <form onsubmit="closeZeroBalanceChapter(event, '${ch.id}')" class="p-5 space-y-4">
-            <p class="text-xs text-stoneInk-700 leading-relaxed">
-              <strong>"${esc(ch.name)}"</strong> tiene saldo <strong>0,00 €</strong>, pero conserva <strong>${chTxs.length} apuntes</strong>. Seguirá apareciendo en gris hasta su fecha de cierre para que no pierdas su historial.
+              Al desactivar <strong>"${esc(ch.name)}"</strong> (saldo <strong>0,00 €</strong>), pasará al final de la lista en gris suave conservando todos sus apuntes históricos, y podrás reactivarlo cuando quieras.
             </p>
             <div>
-              <label class="block text-xs font-bold text-stoneInk-700 mb-1">Fecha de cierre</label>
-              <input type="date" id="zeroCloseDate" value="${defaultDate}" required
+              <label class="block text-xs font-bold text-stoneInk-700 mb-1">Fecha de desactivación</label>
+              <input type="date" id="deactCloseDate" value="${defaultDate}" required
                 class="w-full bg-white border border-cream-300 rounded-xl px-3 py-2.5 text-xs font-bold text-stoneInk-900" />
             </div>
             <div class="flex gap-2">
@@ -2591,8 +2808,8 @@
                 Cancelar
               </button>
               <button type="submit"
-                class="flex-1 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs">
-                Cerrar y Eliminar
+                class="flex-1 py-3 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs">
+                Desactivar
               </button>
             </div>
           </form>
@@ -2603,7 +2820,7 @@
       if (otherActiveChapters.length === 0) {
         openModal(`
           <div class="px-5 pt-4 pb-3 border-b border-cream-200 flex items-center justify-between bg-white">
-            <h3 class="font-extrabold text-base text-rose-700">Traspaso obligatorio</h3>
+            <h3 class="font-extrabold text-base text-amber-800">Traspaso obligatorio</h3>
             <button onclick="openChapterModal('${ch.id}')" class="w-8 h-8 rounded-full bg-cream-200 flex items-center justify-center text-stoneInk-700">
               <i class="ph-bold ph-x"></i>
             </button>
@@ -2612,7 +2829,7 @@
             <div class="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 text-xs text-stoneInk-800 leading-relaxed">
               <p class="font-extrabold text-amber-900 mb-1">No hay otro capítulo activo de destino</p>
               <p>
-                Para eliminar <strong>"${esc(ch.name)}"</strong> (saldo actual: <strong class="font-mono">${fmtEur(ch.annualEndBalance)}</strong>), primero crea otro capítulo al que traspasar ese dinero.
+                Para desactivar <strong>"${esc(ch.name)}"</strong> (saldo actual: <strong class="font-mono">${fmtEur(ch.annualEndBalance)}</strong>), primero crea otro capítulo al que traspasar ese importe.
               </p>
             </div>
             <div class="flex gap-2">
@@ -2636,17 +2853,17 @@
       openModal(`
         <div class="px-5 pt-4 pb-3 border-b border-cream-200 flex items-center justify-between bg-white">
           <div>
-            <span class="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 block">Paso obligatorio antes de eliminar</span>
-            <h3 class="font-extrabold text-base text-stoneInk-900">Traspasar saldo y cerrar capítulo</h3>
+            <span class="text-[10px] font-extrabold uppercase tracking-wider text-amber-700 block">Paso obligatorio antes de desactivar</span>
+            <h3 class="font-extrabold text-base text-stoneInk-900">Traspasar saldo y desactivar</h3>
           </div>
           <button onclick="openChapterModal('${ch.id}')" class="w-8 h-8 rounded-full bg-cream-200 flex items-center justify-center text-stoneInk-700">
             <i class="ph-bold ph-x"></i>
           </button>
         </div>
 
-        <form onsubmit="executeTransferAndCloseChapter(event, '${ch.id}')" class="p-5 space-y-4 overflow-y-auto">
+        <form onsubmit="executeTransferAndDeactivateChapter(event, '${ch.id}')" class="p-5 space-y-4 overflow-y-auto">
           <div class="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 text-xs text-stoneInk-800 leading-relaxed">
-            Para eliminar <strong>"${esc(ch.name)}"</strong>, primero debes traspasar su saldo (<strong class="font-mono ${isNegative ? 'text-terra-600' : 'text-emeraldPro-700'}">${balText}</strong>) a otro capítulo. El capítulo quedará cerrado (en gris) conservando sus datos hasta la fecha.
+            Para desactivar <strong>"${esc(ch.name)}"</strong>, primero debes traspasar su saldo (<strong class="font-mono ${isNegative ? 'text-terra-600' : 'text-emeraldPro-700'}">${balText}</strong>) a otro capítulo. Quedará desactivado (en gris) y podrás reactivarlo en el futuro.
           </div>
 
           <div>
@@ -2670,7 +2887,7 @@
             </div>
             <div>
               <label class="block text-xs font-bold text-stoneInk-700 mb-1">Concepto</label>
-              <input type="text" id="delTransferConcept" value="Cierre capítulo ${esc(ch.name)}" required
+              <input type="text" id="delTransferConcept" value="Desactivación ${esc(ch.name)}" required
                 class="w-full bg-white border border-cream-300 rounded-xl px-3 py-2.5 text-xs font-semibold text-stoneInk-900" />
             </div>
           </div>
@@ -2681,32 +2898,20 @@
               Cancelar
             </button>
             <button type="submit"
-              class="flex-1 py-3.5 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-md active:scale-[0.98] transition-all">
-              Traspasar y Eliminar
+              class="flex-1 py-3.5 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs shadow-md active:scale-[0.98] transition-all">
+              Traspasar y Desactivar
             </button>
           </div>
         </form>
       `);
     }
 
-    function confirmDirectDeleteEmptyChapter(chapterId) {
-      const book = getActiveBook();
-      const ch = book.chapters.find(c => c.id === chapterId);
-      if (!ch) return;
-      book.chapters = book.chapters.filter(c => c.id !== chapterId);
-      if (chronoFilter.chapterId === chapterId) chronoFilter.chapterId = 'all';
-      saveState();
-      closeModal();
-      renderAll();
-      showToast(`Capítulo "${ch.name}" eliminado`);
-    }
-
-    function closeZeroBalanceChapter(e, chapterId) {
+    function confirmDeactivateZeroChapter(e, chapterId) {
       e.preventDefault();
       const book = getActiveBook();
       const ch = book.chapters.find(c => c.id === chapterId);
       if (!ch) return;
-      const date = document.getElementById('zeroCloseDate').value;
+      const date = document.getElementById('deactCloseDate').value;
       const monthIdx = date && date.length >= 7
         ? Math.max(0, Math.min(11, parseInt(date.split('-')[1], 10) - 1))
         : selectedMonth;
@@ -2719,10 +2924,10 @@
       saveState();
       closeModal();
       renderAll();
-      showToast(`Capítulo "${ch.name}" cerrado`);
+      showToast(`Capítulo "${ch.name}" desactivado`);
     }
 
-    function executeTransferAndCloseChapter(e, chapterId) {
+    function executeTransferAndDeactivateChapter(e, chapterId) {
       e.preventDefault();
       const book = getActiveBook();
       const { chapters } = analyzeBook(book, 11);
@@ -2753,7 +2958,7 @@
           chapterId: sourceCh.id,
           amount: Number(bal.toFixed(2)),
           concept: `Traspaso a ${targetCh.name}: ${concept}`,
-          note: 'Cierre de capítulo',
+          note: 'Desactivación de capítulo',
           date,
           month: monthIdx
         });
@@ -2765,7 +2970,7 @@
           chapterId: targetCh.id,
           amount: Number(bal.toFixed(2)),
           concept: `Traspaso desde ${sourceCh.name}: ${concept}`,
-          note: 'Cierre de capítulo',
+          note: 'Desactivación de capítulo',
           date,
           month: monthIdx
         });
@@ -2779,7 +2984,7 @@
           chapterId: sourceCh.id,
           amount: absBal,
           concept: `Liquidación desde ${targetCh.name}: ${concept}`,
-          note: 'Cierre de capítulo',
+          note: 'Desactivación de capítulo',
           date,
           month: monthIdx
         });
@@ -2790,7 +2995,7 @@
           chapterId: targetCh.id,
           amount: absBal,
           concept: `Cobertura cierre ${sourceCh.name}: ${concept}`,
-          note: 'Cierre de capítulo',
+          note: 'Desactivación de capítulo',
           date,
           month: monthIdx
         });
@@ -2807,7 +3012,90 @@
       saveState();
       closeModal();
       renderAll();
-      showToast(`Traspasados ${fmtEur(bal)} a "${targetCh.name}" y cerrado "${sourceCh.name}"`);
+      showToast(`Traspasados ${fmtEur(bal)} a "${targetCh.name}" y desactivado "${sourceCh.name}"`);
+    }
+
+    /**
+     * Borrar permanentemente un capítulo:
+     * - Si tiene al menos un movimiento (apunte o saldo inicial != 0), lo impide y permite desactivarlo sobre la marcha.
+     * - Si está 100% vacío (0 apuntes y saldo inicial 0), muestra confirmación de que no hay vuelta atrás.
+     */
+    function initiatePermanentDeleteChapter(chapterId) {
+      const book = getActiveBook();
+      const ch = book.chapters.find(c => c.id === chapterId);
+      if (!ch) return;
+
+      const hasActivity = chapterHasAnyActivity(book, chapterId);
+
+      if (hasActivity) {
+        openModal(`
+          <div class="px-5 pt-4 pb-3 border-b border-cream-200 flex items-center justify-between bg-white">
+            <h3 class="font-extrabold text-base text-rose-700">No se puede eliminar</h3>
+            <button onclick="openChapterModal('${ch.id}')" class="w-8 h-8 rounded-full bg-cream-200 flex items-center justify-center text-stoneInk-700">
+              <i class="ph-bold ph-x"></i>
+            </button>
+          </div>
+          <div class="p-5 space-y-4">
+            <div class="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 text-xs text-stoneInk-800 leading-relaxed space-y-1.5">
+              <p class="font-extrabold text-amber-900">Este capítulo tiene movimientos o saldo inicial</p>
+              <p>
+                No puedes eliminar permanentemente <strong>"${esc(ch.name)}"</strong> porque ya cuenta con apuntes o saldo inicial registrado, pero <strong>puedes desactivarlo</strong> para ocultarlo de los activos sin perder su historial.
+              </p>
+            </div>
+
+            <div class="flex gap-2">
+              <button type="button" onclick="openChapterModal('${ch.id}')"
+                class="flex-1 py-3 rounded-2xl bg-cream-200 text-stoneInk-800 font-extrabold text-xs">
+                Volver
+              </button>
+              ${!ch.closed ? `
+                <button type="button" onclick="initiateDeactivateChapter('${ch.id}')"
+                  class="flex-1 py-3 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs">
+                  Desactivar ahora
+                </button>
+              ` : ''}
+            </div>
+          </div>
+        `);
+        return;
+      }
+
+      openModal(`
+        <div class="px-5 pt-4 pb-3 border-b border-cream-200 flex items-center justify-between bg-white">
+          <h3 class="font-extrabold text-base text-rose-700">Borrar capítulo permanentemente</h3>
+          <button onclick="openChapterModal('${ch.id}')" class="w-8 h-8 rounded-full bg-cream-200 flex items-center justify-center text-stoneInk-700">
+            <i class="ph-bold ph-x"></i>
+          </button>
+        </div>
+        <div class="p-5 space-y-4">
+          <p class="text-xs text-stoneInk-700 leading-relaxed">
+            ¿Seguro que quieres borrar permanentemente el capítulo <strong>"${esc(ch.name)}"</strong>? <strong>Esta acción no tiene vuelta atrás.</strong>
+          </p>
+          <div class="flex gap-2">
+            <button type="button" onclick="openChapterModal('${ch.id}')"
+              class="flex-1 py-3 rounded-2xl bg-cream-200 text-stoneInk-800 font-extrabold text-xs">
+              Cancelar
+            </button>
+            <button type="button" onclick="confirmPermanentDeleteChapter('${ch.id}')"
+              class="flex-1 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs">
+              Borrar permanentemente
+            </button>
+          </div>
+        </div>
+      `);
+    }
+
+    function confirmPermanentDeleteChapter(chapterId) {
+      const book = getActiveBook();
+      const ch = book.chapters.find(c => c.id === chapterId);
+      if (!ch) return;
+      book.chapters = book.chapters.filter(c => c.id !== chapterId);
+      if (chronoFilter.chapterId === chapterId) chronoFilter.chapterId = 'all';
+      if (chartMonthlyChapterFilter === chapterId) chartMonthlyChapterFilter = 'all';
+      saveState();
+      closeModal();
+      renderAll();
+      showToast(`Capítulo "${ch.name}" eliminado permanentemente`);
     }
 
     // --- C. EDITOR DE CELDA DE LA TABLA ANUAL ---
@@ -2984,38 +3272,62 @@
       showToast(`Capítulo "${name}" creado`);
     }
 
-    // --- F. GESTOR DE BLOQUES (CREAR / BORRAR BLOQUES + CREAR AÑOS) ---
+    // --- F. GESTOR DE BLOQUES (DESACTIVAR, REACTIVAR, BORRAR PERMANENTEMENTE + CREAR AÑOS) ---
     function openWorkspaceModal() {
       const active = getActiveBook();
-      const workspaces = getWorkspaces();
-      const canDeleteBlock = workspaces.length > 1;
+      const workspaces = getSortedWorkspaces();
+      const canDeleteOrDeactivate = workspaces.length > 1;
 
       const blocksGridHtml = workspaces.map(ws => {
         const wsBooks = getBooksByCategory(ws.id);
         const isActive = active.category === ws.id;
+        const isClosed = Boolean(ws.closed);
+
         return `
           <div class="relative rounded-2xl border-2 transition-all ${
-            isActive
-              ? `${getWorkspaceBorderClass(ws.color)} bg-white shadow-sm`
-              : 'border-cream-300 bg-cream-100 hover:bg-white'
+            isClosed
+              ? 'border-stoneInk-400/40 bg-cream-200/75 opacity-75'
+              : isActive
+                ? `${getWorkspaceBorderClass(ws.color)} bg-white shadow-sm`
+                : 'border-cream-300 bg-cream-100 hover:bg-white'
           }">
             <button type="button" onclick="switchCategory('${ws.id}')" class="w-full p-3.5 text-left">
-              <div class="w-9 h-9 rounded-xl ${getWorkspaceBgClass(ws.color)} text-white flex items-center justify-center mb-2">
+              <div class="w-9 h-9 rounded-xl ${getWorkspaceBgClass(ws.color, isClosed)} text-white flex items-center justify-center mb-2">
                 <i class="ph-bold ${ws.icon} text-lg"></i>
               </div>
-              <p class="font-extrabold text-sm text-stoneInk-900 truncate pr-6">${esc(ws.name)}</p>
+              <p class="font-extrabold text-sm ${isClosed ? 'text-stoneInk-500 line-through' : 'text-stoneInk-900'} truncate pr-14">
+                ${esc(ws.name)}
+              </p>
               <p class="text-[11px] text-stoneInk-500 mt-0.5">${formatYearsSummary(wsBooks)}</p>
+              ${isClosed ? `<span class="inline-block mt-1 text-[9px] font-extrabold uppercase bg-stoneInk-500 text-white px-1.5 py-0.5 rounded">Desactivado</span>` : ''}
             </button>
 
-            ${canDeleteBlock ? `
-              <button type="button" onclick="confirmDeleteWorkspace('${ws.id}')" title="Eliminar bloque"
-                class="absolute top-2.5 right-2.5 w-7 h-7 rounded-lg bg-cream-200/80 hover:bg-rose-100 text-stoneInk-500 hover:text-rose-600 flex items-center justify-center transition-colors">
-                <i class="ph-bold ph-trash text-xs"></i>
-              </button>
-            ` : ''}
+            <div class="absolute top-2.5 right-2.5 flex items-center gap-1">
+              ${isClosed ? `
+                <button type="button" onclick="reactivateWorkspace('${ws.id}')" title="Reactivar bloque"
+                  class="w-7 h-7 rounded-lg bg-emeraldPro-100 hover:bg-emeraldPro-200 text-emeraldPro-700 flex items-center justify-center transition-colors">
+                  <i class="ph-bold ph-arrow-counter-clockwise text-xs"></i>
+                </button>
+              ` : (canDeleteOrDeactivate ? `
+                <button type="button" onclick="confirmDeactivateWorkspace('${ws.id}')" title="Desactivar bloque"
+                  class="w-7 h-7 rounded-lg bg-amber-100/80 hover:bg-amber-200 text-amber-800 flex items-center justify-center transition-colors">
+                  <i class="ph-bold ph-prohibit text-xs"></i>
+                </button>
+              ` : '')}
+
+              ${canDeleteOrDeactivate ? `
+                <button type="button" onclick="initiatePermanentDeleteWorkspace('${ws.id}')" title="Borrar bloque permanentemente"
+                  class="w-7 h-7 rounded-lg bg-cream-200/80 hover:bg-rose-100 text-stoneInk-500 hover:text-rose-600 flex items-center justify-center transition-colors">
+                  <i class="ph-bold ph-trash text-xs"></i>
+                </button>
+              ` : ''}
+            </div>
           </div>
         `;
       }).join('');
+
+      const activeWorkspaces = workspaces.filter(w => !w.closed);
+      const targetWorkspacesForYear = activeWorkspaces.length > 0 ? activeWorkspaces : workspaces;
 
       openModal(`
         <div class="px-5 pt-4 pb-3 border-b border-cream-200 flex items-center justify-between bg-white">
@@ -3067,7 +3379,7 @@
                 <label class="block text-[10px] font-bold text-stoneInk-600 mb-1">Bloque destino</label>
                 <select id="newYearCategory" onchange="refreshCopySourceOptions()"
                   class="w-full bg-white border border-cream-300 rounded-xl px-3 py-2 text-xs font-bold">
-                  ${workspaces.map(w => `
+                  ${targetWorkspacesForYear.map(w => `
                     <option value="${w.id}" ${active.category === w.id ? 'selected' : ''}>${esc(w.name)}</option>
                   `).join('')}
                 </select>
@@ -3120,7 +3432,8 @@
         id: blockId,
         name,
         icon: preset.icon,
-        color: preset.color
+        color: preset.color,
+        closed: false
       });
 
       state.books.push({
@@ -3133,7 +3446,7 @@
 
       state.activeCategory = blockId;
       state.activeBookId = newBookId;
-      chronoFilter.chapterId = 'all';
+      chronoFilter = { search: '', chapterId: 'all', month: 'all', type: 'all' };
       chartMonthlyChapterFilter = 'all';
       chartAnnualChapterFilter = 'all';
       chartInspectMonth = null;
@@ -3144,53 +3457,143 @@
       showToast(`Bloque "${name}" creado`);
     }
 
-    function confirmDeleteWorkspace(wsId) {
-      const workspaces = getWorkspaces();
-      if (workspaces.length <= 1) {
-        showToast('Debe quedar al menos un bloque activo', 'error');
-        return;
-      }
+    function confirmDeactivateWorkspace(wsId) {
       const ws = getWorkspaceInfo(wsId);
-      const wsBooks = getBooksByCategory(wsId);
-
       openModal(`
         <div class="px-5 pt-4 pb-3 border-b border-cream-200 flex items-center justify-between bg-white">
-          <h3 class="font-extrabold text-base text-rose-700">Eliminar bloque</h3>
+          <h3 class="font-extrabold text-base text-amber-800">Desactivar bloque</h3>
           <button onclick="openWorkspaceModal()" class="w-8 h-8 rounded-full bg-cream-200 flex items-center justify-center text-stoneInk-700">
             <i class="ph-bold ph-x"></i>
           </button>
         </div>
         <div class="p-5 space-y-4">
           <p class="text-xs text-stoneInk-700 leading-relaxed">
-            ¿Seguro que quieres eliminar el bloque <strong>"${esc(ws.name)}"</strong> y todos sus años (${formatYearsSummary(wsBooks)})? Esta acción no se puede deshacer.
+            Al desactivar el bloque <strong>"${esc(ws.name)}"</strong>, aparecerá al final en gris suave conservando todos sus años y movimientos, y podrás reactivarlo en cualquier momento.
           </p>
           <div class="flex gap-2">
             <button type="button" onclick="openWorkspaceModal()"
               class="flex-1 py-3 rounded-2xl bg-cream-200 text-stoneInk-800 font-extrabold text-xs">
               Cancelar
             </button>
-            <button type="button" onclick="executeDeleteWorkspace('${wsId}')"
-              class="flex-1 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs">
-              Eliminar bloque
+            <button type="button" onclick="executeDeactivateWorkspace('${wsId}')"
+              class="flex-1 py-3 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs">
+              Desactivar bloque
             </button>
           </div>
         </div>
       `);
     }
 
-    function executeDeleteWorkspace(wsId) {
+    function executeDeactivateWorkspace(wsId) {
+      const target = getWorkspaces().find(w => w.id === wsId);
+      if (!target) return;
+      target.closed = true;
+
+      if (state.activeCategory === wsId) {
+        const nextActive = getSortedWorkspaces().find(w => !w.closed && w.id !== wsId);
+        if (nextActive) {
+          state.activeCategory = nextActive.id;
+          const nextBooks = getBooksByCategory(nextActive.id);
+          if (nextBooks.length > 0) state.activeBookId = nextBooks[0].id;
+        }
+      }
+
+      saveState();
+      closeModal();
+      renderAll();
+      showToast(`Bloque "${target.name}" desactivado`);
+    }
+
+    function reactivateWorkspace(wsId) {
+      const target = getWorkspaces().find(w => w.id === wsId);
+      if (!target) return;
+      target.closed = false;
+      saveState();
+      closeModal();
+      renderAll();
+      showToast(`Bloque "${target.name}" reactivado`);
+    }
+
+    function initiatePermanentDeleteWorkspace(wsId) {
+      const workspaces = getWorkspaces();
+      if (workspaces.length <= 1) {
+        showToast('Debe quedar al menos un bloque', 'error');
+        return;
+      }
+      const ws = getWorkspaceInfo(wsId);
+      const wsBooks = getBooksByCategory(wsId);
+      const hasActivity = workspaceHasAnyActivity(wsId);
+
+      if (hasActivity) {
+        openModal(`
+          <div class="px-5 pt-4 pb-3 border-b border-cream-200 flex items-center justify-between bg-white">
+            <h3 class="font-extrabold text-base text-rose-700">No se puede eliminar</h3>
+            <button onclick="openWorkspaceModal()" class="w-8 h-8 rounded-full bg-cream-200 flex items-center justify-center text-stoneInk-700">
+              <i class="ph-bold ph-x"></i>
+            </button>
+          </div>
+          <div class="p-5 space-y-4">
+            <div class="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 text-xs text-stoneInk-800 leading-relaxed space-y-1.5">
+              <p class="font-extrabold text-amber-900">Este bloque tiene movimientos o saldo inicial</p>
+              <p>
+                No puedes borrar permanentemente el bloque <strong>"${esc(ws.name)}"</strong> porque contiene apuntes o saldos iniciales registrados, pero <strong>puedes desactivarlo</strong> para mantenerlo archivado en gris sin perder sus datos.
+              </p>
+            </div>
+            <div class="flex gap-2">
+              <button type="button" onclick="openWorkspaceModal()"
+                class="flex-1 py-3 rounded-2xl bg-cream-200 text-stoneInk-800 font-extrabold text-xs">
+                Volver
+              </button>
+              ${!ws.closed ? `
+                <button type="button" onclick="confirmDeactivateWorkspace('${wsId}')"
+                  class="flex-1 py-3 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs">
+                  Desactivar bloque
+                </button>
+              ` : ''}
+            </div>
+          </div>
+        `);
+        return;
+      }
+
+      openModal(`
+        <div class="px-5 pt-4 pb-3 border-b border-cream-200 flex items-center justify-between bg-white">
+          <h3 class="font-extrabold text-base text-rose-700">Borrar bloque permanentemente</h3>
+          <button onclick="openWorkspaceModal()" class="w-8 h-8 rounded-full bg-cream-200 flex items-center justify-center text-stoneInk-700">
+            <i class="ph-bold ph-x"></i>
+          </button>
+        </div>
+        <div class="p-5 space-y-4">
+          <p class="text-xs text-stoneInk-700 leading-relaxed">
+            ¿Seguro que quieres borrar permanentemente el bloque <strong>"${esc(ws.name)}"</strong> (${formatYearsSummary(wsBooks)})? <strong>Esta acción no tiene vuelta atrás.</strong>
+          </p>
+          <div class="flex gap-2">
+            <button type="button" onclick="openWorkspaceModal()"
+              class="flex-1 py-3 rounded-2xl bg-cream-200 text-stoneInk-800 font-extrabold text-xs">
+              Cancelar
+            </button>
+            <button type="button" onclick="executePermanentDeleteWorkspace('${wsId}')"
+              class="flex-1 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs">
+              Borrar permanentemente
+            </button>
+          </div>
+        </div>
+      `);
+    }
+
+    function executePermanentDeleteWorkspace(wsId) {
       const ws = getWorkspaceInfo(wsId);
       state.workspaces = getWorkspaces().filter(w => w.id !== wsId);
       state.books = state.books.filter(b => b.category !== wsId);
 
       if (state.activeCategory === wsId) {
-        const nextWs = state.workspaces[0];
+        const nextWs = getSortedWorkspaces()[0];
         state.activeCategory = nextWs.id;
         const nextBooks = getBooksByCategory(nextWs.id);
         state.activeBookId = nextBooks[0]?.id || '';
       }
 
-      chronoFilter.chapterId = 'all';
+      chronoFilter = { search: '', chapterId: 'all', month: 'all', type: 'all' };
       chartMonthlyChapterFilter = 'all';
       chartAnnualChapterFilter = 'all';
       chartInspectMonth = null;
@@ -3198,7 +3601,7 @@
       saveState();
       closeModal();
       renderAll();
-      showToast(`Bloque "${ws.name}" eliminado`);
+      showToast(`Bloque "${ws.name}" borrado permanentemente`);
     }
 
     function refreshCopySourceOptions() {
@@ -3227,7 +3630,9 @@
       if (list.length > 0) {
         state.activeBookId = list[0].id;
       }
-      chronoFilter.chapterId = 'all';
+      chronoFilter = { search: '', chapterId: 'all', month: 'all', type: 'all' };
+      const searchEl = document.getElementById('chronoSearchInput');
+      if (searchEl) searchEl.value = '';
       chartMonthlyChapterFilter = 'all';
       chartAnnualChapterFilter = 'all';
       chartInspectMonth = null;
@@ -3287,7 +3692,10 @@
               id: `ch_${cat}_${year}_${Date.now()}_${idx}`,
               name: c.name,
               initialBalance: c.annualEndBalance,
-              quota: c.quota
+              quota: c.quota,
+              closed: false,
+              closedDate: null,
+              closedMonth: null
             }));
         }
       }
