@@ -596,14 +596,30 @@
      */
     function buildChapterFilterOptionsHtml(chapters, selectedValue, includeAllLabel = 'Todos los capítulos', valueKey = 'id') {
       const sorted = getSortedChapters(chapters);
-      let html = includeAllLabel ? `<option value="all">${esc(includeAllLabel)}</option>` : '';
-      html += sorted.map(c => {
+      const activeList = sorted.filter(c => !c.closed);
+      const closedList = sorted.filter(c => Boolean(c.closed));
+
+      const renderOpt = (c, isClosed) => {
         const val = valueKey === 'nameKey' ? (c.name || '').trim().toLowerCase() : c.id;
-        const isClosed = Boolean(c.closed);
-        const styleAttr = isClosed ? 'style="color:#9CA3AF; background-color:#F5F5F4;"' : 'style="color:#1C1917;"';
+        const selAttr = String(val) === String(selectedValue) ? 'selected' : '';
+        const styleAttr = isClosed
+          ? 'style="color:#9CA3AF; background-color:#F5F5F4;"'
+          : 'style="color:#1C1917; font-weight:600;"';
         const suffix = isClosed ? ' (Desactivado)' : '';
-        return `<option value="${esc(val)}" ${String(val) === String(selectedValue) ? 'selected' : ''} ${styleAttr}>${esc(c.name)}${suffix}</option>`;
-      }).join('');
+        return `<option value="${esc(val)}" ${selAttr} ${styleAttr}>${esc(c.name)}${suffix}</option>`;
+      };
+
+      let html = includeAllLabel
+        ? `<option value="all" ${String(selectedValue) === 'all' ? 'selected' : ''}>${esc(includeAllLabel)}</option>`
+        : '';
+
+      if (activeList.length > 0 && closedList.length > 0) {
+        html += `<optgroup label="Activos" style="color:#0F766E; font-weight:700;">${activeList.map(c => renderOpt(c, false)).join('')}</optgroup>`;
+        html += `<optgroup label="Desactivados" style="color:#9CA3AF; font-weight:600;">${closedList.map(c => renderOpt(c, true)).join('')}</optgroup>`;
+      } else {
+        html += activeList.map(c => renderOpt(c, false)).join('');
+        html += closedList.map(c => renderOpt(c, true)).join('');
+      }
       return html;
     }
 
@@ -821,29 +837,24 @@
     function selectYearInCategory(bookId) {
       const oldBook = getActiveBook();
       const oldChronoCh = oldBook && chronoFilter.chapterId !== 'all'
-        ? oldBook.chapters.find(c => c.id === chronoFilter.chapterId)
+        ? oldBook.chapters.find(c => String(c.id) === String(chronoFilter.chapterId))
         : null;
       const oldChartMonthlyCh = oldBook && chartMonthlyChapterFilter !== 'all'
-        ? oldBook.chapters.find(c => c.id === chartMonthlyChapterFilter)
+        ? oldBook.chapters.find(c => String(c.id) === String(chartMonthlyChapterFilter))
         : null;
 
       state.activeBookId = bookId;
       const newBook = getActiveBook();
       state.activeCategory = newBook.category;
 
-      // 1. Filtro de Cronológico
+      // 1. Filtro de Cronológico: conserva búsqueda, mes, tipo y capítulo equivalente; si no existe en el nuevo año, limpia filtros
       if (chronoFilter.chapterId !== 'all') {
-        if (oldChronoCh) {
-          const match = newBook.chapters.find(
-            c => (c.name || '').trim().toLowerCase() === (oldChronoCh.name || '').trim().toLowerCase()
-          );
-          if (match) {
-            chronoFilter.chapterId = match.id;
-          } else {
-            chronoFilter = { search: '', chapterId: 'all', month: 'all', type: 'all' };
-            const searchEl = document.getElementById('chronoSearchInput');
-            if (searchEl) searchEl.value = '';
-          }
+        const targetName = oldChronoCh ? (oldChronoCh.name || '').trim().toLowerCase() : '';
+        const match = targetName
+          ? newBook.chapters.find(c => (c.name || '').trim().toLowerCase() === targetName)
+          : null;
+        if (match) {
+          chronoFilter.chapterId = match.id;
         } else {
           chronoFilter = { search: '', chapterId: 'all', month: 'all', type: 'all' };
           const searchEl = document.getElementById('chronoSearchInput');
@@ -853,16 +864,12 @@
 
       // 2. Filtro de Gráfico Evolución Mensual
       if (chartMonthlyChapterFilter !== 'all') {
-        if (oldChartMonthlyCh) {
-          const match = newBook.chapters.find(
-            c => (c.name || '').trim().toLowerCase() === (oldChartMonthlyCh.name || '').trim().toLowerCase()
-          );
-          if (match) {
-            chartMonthlyChapterFilter = match.id;
-          } else {
-            chartMonthlyChapterFilter = 'all';
-            chartInspectMonth = null;
-          }
+        const targetName = oldChartMonthlyCh ? (oldChartMonthlyCh.name || '').trim().toLowerCase() : '';
+        const match = targetName
+          ? newBook.chapters.find(c => (c.name || '').trim().toLowerCase() === targetName)
+          : null;
+        if (match) {
+          chartMonthlyChapterFilter = match.id;
         } else {
           chartMonthlyChapterFilter = 'all';
           chartInspectMonth = null;
@@ -1226,15 +1233,28 @@
         </td>
       `).join('');
 
+      const prevBooksInCat = getBooksByCategory(book.category).filter(b => b.year < book.year);
+      const prevYearBook = prevBooksInCat[0] || null;
+
       document.getElementById('view-table').innerHTML = `
-        <div class="mb-3 flex items-center justify-between gap-2">
-          <div>
-            <h2 class="text-base font-extrabold text-stoneInk-900">Tabla Anual (${book.year})</h2>
-            <p class="text-xs text-stoneInk-500">Toca cualquier casilla para ver o editar sus apuntes</p>
+        <div class="mb-3 space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <h2 class="text-base font-extrabold text-stoneInk-900">Tabla Anual (${book.year})</h2>
+              <p class="text-xs text-stoneInk-500">Toca cualquier casilla para ver o editar sus apuntes</p>
+            </div>
+            <span class="text-[11px] font-bold text-stoneInk-600 bg-cream-200 px-2.5 py-1 rounded-lg shrink-0">
+              Desliza ↔
+            </span>
           </div>
-          <span class="text-[11px] font-bold text-stoneInk-600 bg-cream-200 px-2.5 py-1 rounded-lg shrink-0">
-            Desliza ↔
-          </span>
+
+          ${prevYearBook ? `
+            <button onclick="openSyncInitialBalancesModal('${book.id}')"
+              class="w-full py-2.5 px-3.5 bg-emeraldPro-50 hover:bg-emeraldPro-100 border border-emeraldPro-700/25 rounded-xl text-xs font-extrabold text-emeraldPro-700 flex items-center justify-center gap-2 transition-all active:scale-[0.99]">
+              <i class="ph-bold ph-arrows-clockwise text-sm"></i>
+              <span>Ajustar saldos iniciales con cierre de ${prevYearBook.year}</span>
+            </button>
+          ` : ''}
         </div>
 
         <div class="bg-white border border-cream-300 rounded-2xl shadow-sm overflow-hidden">
@@ -1323,12 +1343,13 @@
       const book = getActiveBook();
       const chSelect = document.getElementById('chronoChapterSelect');
 
-      if (chronoFilter.chapterId !== 'all' && !book.chapters.some(c => c.id === chronoFilter.chapterId)) {
+      if (chronoFilter.chapterId !== 'all' && !book.chapters.some(c => String(c.id) === String(chronoFilter.chapterId))) {
         chronoFilter = { search: '', chapterId: 'all', month: 'all', type: 'all' };
-        document.getElementById('chronoSearchInput').value = '';
       }
 
       chSelect.innerHTML = buildChapterFilterOptionsHtml(book.chapters, chronoFilter.chapterId, 'Todos cap.', 'id');
+      chSelect.value = chronoFilter.chapterId;
+      document.getElementById('chronoSearchInput').value = chronoFilter.search || '';
       document.getElementById('chronoMonthSelect').value = chronoFilter.month;
       document.getElementById('chronoTypeSelect').value = chronoFilter.type;
     }
@@ -1711,30 +1732,28 @@
         .filter(b => b.year <= CURRENT_REAL_YEAR)
         .sort((a, b) => a.year - b.year);
 
-      // Mapear capítulos históricos indicando si están activos en el último año en que aparecen (o en el libro actual)
+      // Un capítulo se considera activo si existe y está activo en el último año del bloque; si fue cerrado o ya no existe en el año más reciente, figura como desactivado
+      const allCategoryBooksDesc = getBooksByCategory(book.category);
+      const latestBookInCategory = allCategoryBooksDesc[0] || book;
+      const activeKeysInLatest = new Set(
+        (latestBookInCategory.chapters || [])
+          .filter(c => !c.closed)
+          .map(c => (c.name || '').trim().toLowerCase())
+      );
+
       const allChaptersByKey = new Map();
       categoryBooksAsc.forEach(b => {
         (b.chapters || []).forEach(c => {
           const cleanName = (c.name || '').trim();
           const key = cleanName.toLowerCase();
           if (cleanName) {
+            const isCurrentlyActive = activeKeysInLatest.has(key);
             allChaptersByKey.set(key, {
               name: cleanName,
-              closed: Boolean(c.closed)
+              closed: !isCurrentlyActive
             });
           }
         });
-      });
-      // Si el libro activo actual tiene el capítulo, prevalece su estado activo/desactivado actual
-      (book.chapters || []).forEach(c => {
-        const cleanName = (c.name || '').trim();
-        const key = cleanName.toLowerCase();
-        if (cleanName && allChaptersByKey.has(key)) {
-          allChaptersByKey.set(key, {
-            name: cleanName,
-            closed: Boolean(c.closed)
-          });
-        }
       });
 
       const annualPseudoChapters = Array.from(allChaptersByKey.values());
@@ -3404,10 +3423,241 @@
               + Crear Año
             </button>
           </form>
+
+          <!-- Gestionar años existentes del bloque activo (Ajustar saldos iniciales y Eliminar año) -->
+          <div class="bg-white border border-cream-300 rounded-2xl p-4 space-y-2.5">
+            <p class="text-xs font-extrabold text-stoneInk-900 flex items-center gap-1.5">
+              <i class="ph-bold ph-calendar-check text-stoneInk-700 text-base"></i>
+              <span>Años de ${esc(getWorkspaceInfo(active.category).name)}</span>
+            </p>
+            <div class="space-y-1.5 max-h-48 overflow-y-auto">
+              ${(() => {
+                const catBooksList = getBooksByCategory(active.category);
+                const canDeleteYear = catBooksList.length > 1;
+                return catBooksList.map((b, idx) => {
+                  const hasPrevYear = idx < catBooksList.length - 1;
+                  const prevYr = hasPrevYear ? catBooksList[idx + 1].year : null;
+                  return `
+                    <div class="flex items-center justify-between gap-2 p-2.5 rounded-xl border ${b.id === active.id ? 'bg-emeraldPro-50/60 border-emeraldPro-700/30' : 'bg-cream-100 border-cream-200'}">
+                      <button type="button" onclick="selectYearInCategory('${b.id}'); closeModal();" class="text-left min-w-0 flex-1">
+                        <span class="font-mono text-xs font-extrabold text-stoneInk-900">${b.year}</span>
+                        <span class="text-[11px] text-stoneInk-500 ml-1.5">${b.chapters.length} cap. · ${b.transactions.length} apuntes</span>
+                      </button>
+
+                      <div class="flex items-center gap-1.5 shrink-0">
+                        ${hasPrevYear ? `
+                          <button type="button" onclick="openSyncInitialBalancesModal('${b.id}')" title="Actualizar saldos iniciales desde ${prevYr}"
+                            class="px-2 py-1 rounded-lg bg-emeraldPro-100 hover:bg-emeraldPro-200 text-emeraldPro-700 text-[10px] font-extrabold flex items-center gap-1">
+                            <i class="ph-bold ph-arrows-clockwise"></i>
+                            <span>S. Ini</span>
+                          </button>
+                        ` : ''}
+
+                        ${canDeleteYear ? `
+                          <button type="button" onclick="confirmDeleteYearBook('${b.id}')" title="Eliminar año ${b.year} definitivamente"
+                            class="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition-colors">
+                            <i class="ph-bold ph-trash text-xs"></i>
+                          </button>
+                        ` : ''}
+                      </div>
+                    </div>
+                  `;
+                }).join('');
+              })()}
+            </div>
+          </div>
         </div>
       `);
 
       refreshCopySourceOptions();
+    }
+
+    // --- H. SINCRONIZAR SALDOS INICIALES DESDE EL AÑO ANTERIOR ---
+    function openSyncInitialBalancesModal(targetBookId) {
+      const targetBook = state.books.find(b => b.id === targetBookId) || getActiveBook();
+      const ws = getWorkspaceInfo(targetBook.category);
+      const prevBooks = getBooksByCategory(targetBook.category).filter(b => b.year < targetBook.year);
+      const prevBook = prevBooks[0];
+
+      if (!prevBook) {
+        showToast('No hay ningún año anterior en este bloque', 'error');
+        return;
+      }
+
+      const { chapters: prevAnalyzed } = analyzeBook(prevBook, 11);
+      const prevMap = new Map(
+        prevAnalyzed.map(c => [(c.name || '').trim().toLowerCase(), c])
+      );
+
+      const comparisons = getSortedChapters(targetBook.chapters).map(ch => {
+        const key = (ch.name || '').trim().toLowerCase();
+        const prevCh = prevMap.get(key);
+        const currentInit = Number(ch.initialBalance) || 0;
+        const nextInit = prevCh ? Number(prevCh.annualEndBalance.toFixed(2)) : currentInit;
+        const diff = Number((nextInit - currentInit).toFixed(2));
+        return {
+          id: ch.id,
+          name: ch.name,
+          foundInPrev: Boolean(prevCh),
+          currentInit,
+          nextInit,
+          diff
+        };
+      });
+
+      const changedCount = comparisons.filter(x => x.foundInPrev && Math.abs(x.diff) >= 0.005).length;
+
+      openModal(`
+        <div class="px-5 pt-4 pb-3 border-b border-cream-200 flex items-center justify-between bg-white">
+          <div>
+            <span class="text-[10px] font-extrabold uppercase tracking-wider text-emeraldPro-700 block">${esc(ws.name)} · ${prevBook.year} → ${targetBook.year}</span>
+            <h3 class="font-extrabold text-base text-stoneInk-900">Ajustar saldos iniciales</h3>
+          </div>
+          <button onclick="closeModal()" class="w-8 h-8 rounded-full bg-cream-200 flex items-center justify-center text-stoneInk-700">
+            <i class="ph-bold ph-x"></i>
+          </button>
+        </div>
+
+        <div class="p-5 overflow-y-auto space-y-4">
+          <p class="text-xs text-stoneInk-700 leading-relaxed">
+            Se actualizarán los <strong>saldos iniciales de ${targetBook.year}</strong> copiando el saldo acumulado al cierre de <strong>${prevBook.year}</strong> para cada capítulo coincidente.
+          </p>
+
+          <div class="bg-white border border-cream-300 rounded-2xl divide-y divide-cream-200 max-h-64 overflow-y-auto">
+            ${comparisons.length === 0
+              ? `<p class="p-4 text-xs text-stoneInk-500 text-center">No hay capítulos en ${targetBook.year}.</p>`
+              : comparisons.map(item => `
+                  <div class="px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs">
+                    <div class="min-w-0">
+                      <p class="font-bold text-stoneInk-900 truncate">${esc(item.name)}</p>
+                      ${!item.foundInPrev
+                        ? `<span class="text-[10px] text-stoneInk-400">Sin equivalente en ${prevBook.year} (se mantiene)</span>`
+                        : Math.abs(item.diff) < 0.005
+                          ? `<span class="text-[10px] text-stoneInk-400">Ya está cuadrado</span>`
+                          : `<span class="text-[10px] font-mono ${item.diff > 0 ? 'text-emeraldPro-700' : 'text-terra-600'}">Variación: ${item.diff > 0 ? '+' : ''}${fmtEur(item.diff)}</span>`
+                      }
+                    </div>
+                    <div class="text-right font-mono tabular-nums shrink-0">
+                      <span class="text-[11px] text-stoneInk-400 line-through block">${fmtEur(item.currentInit)}</span>
+                      <strong class="text-xs ${item.nextInit < -0.005 ? 'text-terra-600' : 'text-emeraldPro-700'}">${fmtEur(item.nextInit)}</strong>
+                    </div>
+                  </div>
+                `).join('')
+            }
+          </div>
+
+          <div class="flex gap-2">
+            <button type="button" onclick="closeModal()"
+              class="flex-1 py-3 rounded-2xl bg-cream-200 text-stoneInk-800 font-extrabold text-xs">
+              Cancelar
+            </button>
+            <button type="button" onclick="executeSyncInitialBalances('${targetBook.id}')"
+              class="flex-1 py-3 rounded-2xl bg-emeraldPro-700 hover:bg-emeraldPro-600 text-white font-extrabold text-xs shadow-sm">
+              ${changedCount > 0 ? `Actualizar (${changedCount} cambios)` : 'Confirmar y cuadrar'}
+            </button>
+          </div>
+        </div>
+      `);
+    }
+
+    function executeSyncInitialBalances(targetBookId) {
+      const targetBook = state.books.find(b => b.id === targetBookId);
+      if (!targetBook) return;
+      const prevBooks = getBooksByCategory(targetBook.category).filter(b => b.year < targetBook.year);
+      const prevBook = prevBooks[0];
+      if (!prevBook) return;
+
+      const { chapters: prevAnalyzed } = analyzeBook(prevBook, 11);
+      const prevMap = new Map(
+        prevAnalyzed.map(c => [(c.name || '').trim().toLowerCase(), c])
+      );
+
+      let updatedCount = 0;
+      targetBook.chapters.forEach(ch => {
+        const key = (ch.name || '').trim().toLowerCase();
+        const prevCh = prevMap.get(key);
+        if (prevCh) {
+          const newVal = Number(prevCh.annualEndBalance.toFixed(2));
+          if (Math.abs((Number(ch.initialBalance) || 0) - newVal) >= 0.005) {
+            updatedCount++;
+          }
+          ch.initialBalance = newVal;
+        }
+      });
+
+      saveState();
+      closeModal();
+      renderAll();
+      showToast(
+        updatedCount > 0
+          ? `Saldos iniciales de ${targetBook.year} actualizados (${updatedCount} capítulos)`
+          : `Los saldos iniciales de ${targetBook.year} ya estaban al día`
+      );
+    }
+
+    // --- I. ELIMINAR UN AÑO COMPLETO DEFINITIVAMENTE ---
+    function confirmDeleteYearBook(bookId) {
+      const bookToDelete = state.books.find(b => b.id === bookId);
+      if (!bookToDelete) return;
+      const ws = getWorkspaceInfo(bookToDelete.category);
+      const catBooks = getBooksByCategory(bookToDelete.category);
+
+      if (catBooks.length <= 1) {
+        showToast('Un bloque debe tener al menos un año', 'error');
+        return;
+      }
+
+      openModal(`
+        <div class="px-5 pt-4 pb-3 border-b border-cream-200 flex items-center justify-between bg-white">
+          <h3 class="font-extrabold text-base text-rose-700">Eliminar año ${bookToDelete.year} definitivamente</h3>
+          <button onclick="openWorkspaceModal()" class="w-8 h-8 rounded-full bg-cream-200 flex items-center justify-center text-stoneInk-700">
+            <i class="ph-bold ph-x"></i>
+          </button>
+        </div>
+
+        <div class="p-5 space-y-4">
+          <div class="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 text-xs text-stoneInk-800 leading-relaxed space-y-1.5">
+            <p class="font-extrabold text-rose-800">¡Atención! Esta acción es definitiva y no tiene vuelta atrás</p>
+            <p>
+              Vas a eliminar por completo el año <strong>${bookToDelete.year}</strong> del bloque <strong>${esc(ws.name)}</strong>, incluyendo sus <strong>${bookToDelete.chapters.length} capítulos</strong> y <strong>${bookToDelete.transactions.length} apuntes</strong>.
+            </p>
+          </div>
+
+          <div class="flex gap-2">
+            <button type="button" onclick="openWorkspaceModal()"
+              class="flex-1 py-3 rounded-2xl bg-cream-200 text-stoneInk-800 font-extrabold text-xs">
+              Cancelar
+            </button>
+            <button type="button" onclick="executeDeleteYearBook('${bookToDelete.id}')"
+              class="flex-1 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-sm">
+              Eliminar año definitivamente
+            </button>
+          </div>
+        </div>
+      `);
+    }
+
+    function executeDeleteYearBook(bookId) {
+      const bookToDelete = state.books.find(b => b.id === bookId);
+      if (!bookToDelete) return;
+      const cat = bookToDelete.category;
+      const deletedYear = bookToDelete.year;
+
+      state.books = state.books.filter(b => b.id !== bookId);
+
+      if (state.activeBookId === bookId) {
+        const remaining = getBooksByCategory(cat);
+        if (remaining.length > 0) {
+          state.activeBookId = remaining[0].id;
+        }
+      }
+
+      chartInspectYear = null;
+      chartInspectMonth = null;
+      saveState();
+      closeModal();
+      renderAll();
+      showToast(`Año ${deletedYear} eliminado definitivamente`);
     }
 
     function createNewWorkspace(e) {
